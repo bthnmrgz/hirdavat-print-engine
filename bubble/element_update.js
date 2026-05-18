@@ -1,6 +1,6 @@
 function(instance, properties, context) {
   var engine = window.HirdavatPrintEngine;
-  var engineUrl = "https://cdn.jsdelivr.net/gh/bthnmrgz/hirdavat-print-engine@b3ee31b5b26e5fa841a6baf942b1c6492405ecd6/src/hirdavat-print-engine.js";
+  var engineUrl = "https://cdn.jsdelivr.net/gh/bthnmrgz/hirdavat-print-engine@5a40212e089edc69abcc8289878bda0a9fe317fd/src/hirdavat-print-engine.js";
   var instanceId = properties.instance_id || "";
   var debugMode = !!properties.debug_mode;
   var autoRenderPreview = !!properties.auto_render_preview;
