@@ -99,6 +99,7 @@ Optional missing fields render as empty text.
 - Does not use Bubble DOM, viewport size, Chrome zoom, or Bubble responsive layout.
 - The preview window includes `Yazdır`, `Kapat`, and `Kompakt görünüm`.
 - Browser header/footer cannot be controlled by the plugin; the user must disable it in the print dialog.
+- Supports optional `print_style` values in `document_json` for page margin, logo size, font size, and header spacing.
 
 ## Local Test
 

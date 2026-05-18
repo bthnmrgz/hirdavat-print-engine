@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function() {
   "use strict";
 
-  var VERSION = "0.1.0";
+  var VERSION = "0.1.1";
   var registry = {};
 
   function isObject(value) {
@@ -44,6 +44,12 @@
     return "";
   }
 
+  function numberInRange(value, fallback, min, max) {
+    var parsed = Number(value);
+    if (!isFinite(parsed)) return fallback;
+    return Math.min(Math.max(parsed, min), max);
+  }
+
   function parseDocumentJson(input) {
     if (isObject(input)) return input;
 
@@ -67,8 +73,13 @@
       address: trimText(value.address),
       phone: trimText(value.phone),
       email: trimText(value.email),
+      city: trimText(value.city),
+      district: trimText(value.district),
       tax_office: trimText(value.tax_office),
       tax_no: trimText(value.tax_no),
+      tckn: trimText(value.tckn),
+      document_type: trimText(value.document_type),
+      delivery_address: trimText(value.delivery_address),
       logo_url: trimText(value.logo_url)
     };
   }
@@ -94,8 +105,24 @@
       description: trimText(item.description),
       quantity: trimText(item.quantity),
       unit: trimText(item.unit),
+      vat_rate: firstText(item.vat_rate, item.kdv, item.tax_rate),
       status: trimText(item.status),
-      note: trimText(item.note)
+      note: trimText(item.note),
+      explanation: firstText(item.explanation, item.aciklama, item.note)
+    };
+  }
+
+  function normalizePrintStyle(value) {
+    value = isObject(value) ? value : {};
+
+    return {
+      page_margin_mm: numberInRange(value.page_margin_mm, 10, 4, 20),
+      logo_width_mm: numberInRange(value.logo_width_mm, 32, 18, 60),
+      logo_height_mm: numberInRange(value.logo_height_mm, 12, 8, 28),
+      body_font_px: numberInRange(value.body_font_px, 7.2, 6, 11),
+      table_font_px: numberInRange(value.table_font_px, 7.1, 6, 10),
+      header_gap_mm: numberInRange(value.header_gap_mm, 15, 6, 28),
+      document_width_mm: numberInRange(value.document_width_mm, 190, 140, 210)
     };
   }
 
@@ -110,6 +137,7 @@
       company: normalizeParty(raw.company),
       customer: normalizeParty(raw.customer),
       order: normalizeOrder(raw.order),
+      print_style: normalizePrintStyle(raw.print_style || raw.style),
       items: Array.isArray(raw.items) ? raw.items.map(normalizeItem) : []
     };
   }
@@ -134,44 +162,41 @@
     return "";
   }
 
-  function renderInfoRow(label, value) {
+  function renderCompactLine(label, value) {
+    if (!trimText(value)) return "";
+
     return (
-      "<div class=\"hpe-info-row\">" +
-      "<dt>" + escapeHtml(label) + "</dt>" +
-      "<dd>" + escapeHtml(value) + "</dd>" +
+      "<div class=\"hpe-compact-line\">" +
+      "<span>" + escapeHtml(label) + "</span>" +
+      "<strong>" + escapeHtml(value) + "</strong>" +
       "</div>"
     );
   }
 
-  function renderPartyBlock(title, party, extraRows) {
-    var rows = [
-      renderInfoRow("Unvan", party.name),
-      renderInfoRow("Adres", party.address),
-      renderInfoRow("Telefon", party.phone),
-      party.email ? renderInfoRow("E-posta", party.email) : "",
-      party.tax_office ? renderInfoRow("Vergi Dairesi", party.tax_office) : "",
-      party.tax_no ? renderInfoRow("Vergi No", party.tax_no) : ""
-    ];
-
-    if (Array.isArray(extraRows)) rows = rows.concat(extraRows);
-
+  function renderCompanyBlock(company) {
     return (
-      "<section class=\"hpe-panel\">" +
-      "<h2>" + escapeHtml(title) + "</h2>" +
-      "<dl>" + rows.join("") + "</dl>" +
+      "<section class=\"hpe-company-block\">" +
+      (company.logo_url ? "<img class=\"hpe-logo\" src=\"" + escapeAttr(company.logo_url) + "\" alt=\"\">" : "") +
+      "<div class=\"hpe-company-name\">" + escapeHtml(company.name) + "</div>" +
+      "<div>" + escapeHtml(company.address) + "</div>" +
+      "<div>" + escapeHtml(company.phone) + (company.email ? " | " + escapeHtml(company.email) : "") + "</div>" +
       "</section>"
     );
   }
 
-  function renderOrderBlock(order) {
+  function renderCustomerBlock(customer, order) {
+    var deliveryAddress = firstText(customer.delivery_address, order.delivery_address);
+
     return (
-      "<section class=\"hpe-panel\">" +
-      "<h2>Sipariş</h2>" +
-      "<dl>" +
-      renderInfoRow("Durum", order.status) +
-      renderInfoRow("Teslimat", order.delivery_address) +
-      renderInfoRow("Sevkiyat", order.shipping_method) +
-      "</dl>" +
+      "<section class=\"hpe-customer-block\">" +
+      "<h2>Müşteri Bilgileri</h2>" +
+      "<div class=\"hpe-customer-name\">" + escapeHtml(customer.name) + "</div>" +
+      (customer.address ? "<div>" + escapeHtml(customer.address) + "</div>" : "") +
+      renderCompactLine("Tel:", customer.phone) +
+      renderCompactLine("Mükellef Tipi:", customer.document_type) +
+      renderCompactLine("Teslimat Adresi:", deliveryAddress) +
+      renderCompactLine("Vergi Dairesi:", customer.tax_office) +
+      renderCompactLine("Vergi No:", firstText(customer.tax_no, customer.tckn)) +
       "</section>"
     );
   }
@@ -184,13 +209,12 @@
 
         return (
           "<tr>" +
-          "<td class=\"hpe-col-no\">" + escapeHtml(item.line_no) + "</td>" +
           "<td class=\"hpe-col-code\">" + escapeHtml(item.code) + "</td>" +
           "<td class=\"hpe-col-name\">" + escapeHtml(name) + "</td>" +
           "<td class=\"hpe-col-qty\">" + escapeHtml(item.quantity) + "</td>" +
           "<td class=\"hpe-col-unit\">" + escapeHtml(item.unit) + "</td>" +
-          "<td class=\"hpe-col-status\">" + escapeHtml(item.status) + "</td>" +
-          "<td class=\"hpe-col-note\">" + escapeHtml(item.note) + "</td>" +
+          "<td class=\"hpe-col-vat\">" + escapeHtml(item.vat_rate) + "</td>" +
+          "<td class=\"hpe-col-explanation\">" + escapeHtml(item.explanation) + "</td>" +
           "</tr>"
         );
       })
@@ -198,85 +222,92 @@
 
     if (!body) {
       body =
-        "<tr><td class=\"hpe-empty\" colspan=\"7\">Kalem bulunmuyor.</td></tr>";
+        "<tr><td class=\"hpe-empty\" colspan=\"6\">Kalem bulunmuyor.</td></tr>";
     }
 
     return (
       "<table class=\"hpe-items\">" +
       "<thead><tr>" +
-      "<th class=\"hpe-col-no\">#</th>" +
-      "<th class=\"hpe-col-code\">Kod</th>" +
-      "<th class=\"hpe-col-name\">Urun</th>" +
+      "<th class=\"hpe-col-code\">Stok Kodu</th>" +
+      "<th class=\"hpe-col-name\">Stok İsmi</th>" +
       "<th class=\"hpe-col-qty\">Miktar</th>" +
       "<th class=\"hpe-col-unit\">Birim</th>" +
-      "<th class=\"hpe-col-status\">Durum</th>" +
-      "<th class=\"hpe-col-note\">Not</th>" +
+      "<th class=\"hpe-col-vat\">KDV</th>" +
+      "<th class=\"hpe-col-explanation\">Açıklama</th>" +
       "</tr></thead>" +
       "<tbody>" + body + "</tbody>" +
       "</table>"
     );
   }
 
-  function baseStyles() {
+  function dynamicStyleVars(style) {
     return (
+      ":root{" +
+      "--hpe-page-margin:" + style.page_margin_mm + "mm;" +
+      "--hpe-logo-width:" + style.logo_width_mm + "mm;" +
+      "--hpe-logo-height:" + style.logo_height_mm + "mm;" +
+      "--hpe-body-font:" + style.body_font_px + "px;" +
+      "--hpe-table-font:" + style.table_font_px + "px;" +
+      "--hpe-header-gap:" + style.header_gap_mm + "mm;" +
+      "--hpe-document-width:" + style.document_width_mm + "mm;" +
+      "}"
+    );
+  }
+
+  function baseStyles(style) {
+    return (
+      dynamicStyleVars(style) +
       "@page{margin:10mm;}" +
       "html{background:#e8edf3;}" +
-      "body{margin:0;color:#111827;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact;}" +
+      "body{margin:0;color:#111827;font-family:Arial,Helvetica,sans-serif;font-size:var(--hpe-body-font);line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact;}" +
       ".hpe-toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:10px 14px;background:#111827;color:#fff;border-bottom:1px solid #030712;}" +
       ".hpe-toolbar strong{margin-right:auto;font-size:13px;font-weight:700;}" +
       ".hpe-toolbar button,.hpe-toolbar label{border:1px solid rgba(255,255,255,.22);background:#1f2937;color:#fff;border-radius:6px;padding:7px 10px;font-size:12px;line-height:1;cursor:pointer;}" +
       ".hpe-toolbar label{display:flex;align-items:center;gap:6px;}" +
       ".hpe-page-shell{padding:18px;}" +
-      ".hpe-document{max-width:190mm;margin:0 auto;background:#fff;box-shadow:0 16px 48px rgba(15,23,42,.18);}" +
-      ".hpe-page{padding:10mm;}" +
-      ".hpe-header{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start;border-bottom:2px solid #111827;padding-bottom:12px;margin-bottom:12px;}" +
-      ".hpe-brand{display:flex;gap:12px;align-items:flex-start;min-width:0;}" +
-      ".hpe-logo{width:54px;height:54px;object-fit:contain;border:1px solid #d1d5db;padding:4px;}" +
-      ".hpe-company h1{margin:0 0 4px;font-size:18px;line-height:1.15;color:#0f172a;}" +
-      ".hpe-company p{margin:1px 0;color:#374151;}" +
+      ".hpe-document{width:var(--hpe-document-width);max-width:calc(100vw - 36px);margin:0 auto;background:#fff;box-shadow:0 16px 48px rgba(15,23,42,.18);}" +
+      ".hpe-page{padding:var(--hpe-page-margin);}" +
+      ".hpe-slip-header{display:grid;grid-template-columns:1.05fr .95fr 24mm;gap:12mm;align-items:start;margin-bottom:var(--hpe-header-gap);}" +
+      ".hpe-company-block,.hpe-customer-block,.hpe-document-meta{min-width:0;}" +
+      ".hpe-logo{display:block;width:var(--hpe-logo-width);height:var(--hpe-logo-height);object-fit:contain;object-position:left center;margin:0 0 4mm;}" +
+      ".hpe-company-name,.hpe-customer-name{font-weight:700;}" +
+      ".hpe-company-block div,.hpe-customer-block div{margin:1px 0;white-space:pre-wrap;overflow-wrap:anywhere;}" +
+      ".hpe-customer-block h2{margin:0 0 2.5mm;font-size:var(--hpe-body-font);font-weight:400;}" +
+      ".hpe-compact-line{display:grid;grid-template-columns:22mm 1fr;gap:2mm;align-items:start;}" +
+      ".hpe-compact-line span{color:#111827;}" +
+      ".hpe-compact-line strong{font-weight:400;white-space:pre-wrap;overflow-wrap:anywhere;}" +
       ".hpe-document-meta{text-align:right;white-space:nowrap;}" +
-      ".hpe-document-meta h2{margin:0 0 6px;font-size:20px;line-height:1;color:#0f172a;}" +
-      ".hpe-document-meta p{margin:2px 0;color:#374151;}" +
-      ".hpe-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}" +
-      ".hpe-panel{border:1px solid #d1d5db;border-radius:6px;padding:9px;break-inside:avoid;page-break-inside:avoid;}" +
-      ".hpe-panel h2{margin:0 0 7px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#334155;}" +
-      ".hpe-panel dl{margin:0;display:grid;gap:4px;}" +
-      ".hpe-info-row{display:grid;grid-template-columns:86px 1fr;gap:8px;min-width:0;}" +
-      ".hpe-info-row dt{color:#64748b;font-weight:700;}" +
-      ".hpe-info-row dd{margin:0;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;}" +
-      ".hpe-items{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;}" +
+      ".hpe-document-meta div{margin:1px 0;}" +
+      ".hpe-document-meta .hpe-title{font-weight:400;}" +
+      ".hpe-items{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--hpe-table-font);}" +
       ".hpe-items thead{display:table-header-group;}" +
-      ".hpe-items th{background:#f1f5f9;color:#0f172a;border:1px solid #cbd5e1;padding:6px 5px;text-align:left;font-weight:700;}" +
-      ".hpe-items td{border:1px solid #d1d5db;padding:6px 5px;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;}" +
+      ".hpe-items th{background:#fff;color:#111827;border:1px solid #d4d7dc;padding:2mm 1.4mm;text-align:center;font-weight:400;}" +
+      ".hpe-items td{border:1px solid #d4d7dc;padding:2mm 1.4mm;vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;}" +
       ".hpe-items tr{break-inside:avoid;page-break-inside:avoid;}" +
-      ".hpe-col-no{width:7mm;text-align:center;}" +
-      ".hpe-col-code{width:23mm;}" +
+      ".hpe-col-code{width:25mm;}" +
       ".hpe-col-name{width:auto;}" +
-      ".hpe-col-qty{width:16mm;text-align:right;}" +
-      ".hpe-col-unit{width:16mm;}" +
-      ".hpe-col-status{width:26mm;}" +
-      ".hpe-col-note{width:28mm;}" +
+      ".hpe-col-qty{width:16mm;text-align:center;}" +
+      ".hpe-col-unit{width:17mm;text-align:center;}" +
+      ".hpe-col-vat{width:13mm;text-align:center;}" +
+      ".hpe-col-explanation{width:46mm;}" +
       ".hpe-empty{text-align:center;color:#64748b;padding:16px!important;}" +
-      ".hpe-footer{margin-top:12px;border-top:1px solid #d1d5db;padding-top:8px;color:#475569;white-space:pre-wrap;overflow-wrap:anywhere;}" +
+      ".hpe-footer{margin-top:8mm;color:#111827;white-space:pre-wrap;overflow-wrap:anywhere;}" +
       ".hpe-compact .hpe-page{padding:7mm;}" +
-      ".hpe-compact .hpe-grid{gap:7px;margin-bottom:8px;}" +
-      ".hpe-compact .hpe-panel{padding:7px;}" +
-      ".hpe-compact .hpe-items th,.hpe-compact .hpe-items td{padding:4px;}" +
+      ".hpe-compact .hpe-slip-header{gap:8mm;margin-bottom:9mm;}" +
+      ".hpe-compact .hpe-items th,.hpe-compact .hpe-items td{padding:1.2mm;}" +
       "@media print{" +
       "html,body{background:#fff;}" +
       ".hpe-toolbar{display:none!important;}" +
       ".hpe-page-shell{padding:0;}" +
-      ".hpe-document{max-width:none;margin:0;box-shadow:none;}" +
+      ".hpe-document{width:auto;max-width:none;margin:0;box-shadow:none;}" +
       ".hpe-page{padding:0;}" +
-      ".hpe-panel{break-inside:avoid;page-break-inside:avoid;}" +
       "}" +
       "@media(max-width:760px){" +
       ".hpe-page-shell{padding:0;}" +
       ".hpe-document{box-shadow:none;}" +
       ".hpe-page{padding:12px;}" +
-      ".hpe-header,.hpe-grid{grid-template-columns:1fr;}" +
+      ".hpe-slip-header{grid-template-columns:1fr;gap:12px;margin-bottom:18px;}" +
       ".hpe-document-meta{text-align:left;white-space:normal;}" +
-      ".hpe-info-row{grid-template-columns:78px 1fr;}" +
       "}"
     );
   }
@@ -308,37 +339,22 @@
   }
 
   function renderOrderSlipDocument(data) {
-    var logo = data.company.logo_url
-      ? "<img class=\"hpe-logo\" src=\"" + escapeAttr(data.company.logo_url) + "\" alt=\"\">"
-      : "";
-
     var footer = data.order.note
-      ? "<footer class=\"hpe-footer\"><strong>Not:</strong> " + escapeHtml(data.order.note) + "</footer>"
-      : "<footer class=\"hpe-footer\">Bu belge Hirdavat Print Engine tarafindan uretilmistir.</footer>";
+      ? "<footer class=\"hpe-footer\">" + escapeHtml(data.order.note) + "</footer>"
+      : "";
 
     return (
       "<main class=\"hpe-document\">" +
       "<div class=\"hpe-page\">" +
-      "<header class=\"hpe-header\">" +
-      "<div class=\"hpe-brand\">" +
-      logo +
-      "<div class=\"hpe-company\">" +
-      "<h1>" + escapeHtml(data.company.name) + "</h1>" +
-      "<p>" + escapeHtml(data.company.address) + "</p>" +
-      "<p>" + escapeHtml(data.company.phone) + (data.company.email ? " | " + escapeHtml(data.company.email) : "") + "</p>" +
-      "</div>" +
-      "</div>" +
+      "<header class=\"hpe-slip-header\">" +
+      renderCompanyBlock(data.company) +
+      renderCustomerBlock(data.customer, data.order) +
       "<div class=\"hpe-document-meta\">" +
-      "<h2>" + escapeHtml(data.title) + "</h2>" +
-      "<p><strong>Belge No:</strong> " + escapeHtml(data.document_no) + "</p>" +
-      "<p><strong>Tarih:</strong> " + escapeHtml(data.date) + "</p>" +
-      "<p><strong>Kalem:</strong> " + escapeHtml(data.items.length) + "</p>" +
+      "<div>" + escapeHtml(data.date) + "</div>" +
+      "<div class=\"hpe-title\">" + escapeHtml(data.title) + "</div>" +
+      "<div>#" + escapeHtml(data.document_no) + "</div>" +
       "</div>" +
       "</header>" +
-      "<div class=\"hpe-grid\">" +
-      renderPartyBlock("Müşteri", data.customer) +
-      renderOrderBlock(data.order) +
-      "</div>" +
       renderItems(data.items) +
       footer +
       "</div>" +
@@ -358,7 +374,7 @@
       "<meta charset=\"utf-8\">" +
       "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
       "<title>" + escapeHtml(data.title) + "</title>" +
-      "<style>" + baseStyles() + "</style>" +
+      "<style>" + baseStyles(data.print_style) + "</style>" +
       "</head><body" + bodyClass + ">" +
       toolbar +
       "<div class=\"hpe-page-shell\">" +

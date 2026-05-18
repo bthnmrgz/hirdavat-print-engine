@@ -1,9 +1,44 @@
 function(instance, properties, context) {
   var engine = window.HirdavatPrintEngine;
+  var engineUrl = "https://cdn.jsdelivr.net/gh/bthnmrgz/hirdavat-print-engine@v0.1.1/src/hirdavat-print-engine.js";
   var instanceId = properties.instance_id || "";
   var debugMode = !!properties.debug_mode;
   var autoRenderPreview = !!properties.auto_render_preview;
   var root = instance.data.hpe_root;
+
+  function loadEngine(callback) {
+    if (window.HirdavatPrintEngine) {
+      callback(window.HirdavatPrintEngine);
+      return;
+    }
+
+    if (window.__hpe_engine_loading) {
+      window.__hpe_engine_loading.push(callback);
+      return;
+    }
+
+    window.__hpe_engine_loading = [callback];
+
+    var script = document.createElement("script");
+    script.src = engineUrl;
+    script.async = false;
+    script.onload = function() {
+      var callbacks = window.__hpe_engine_loading || [];
+      window.__hpe_engine_loading = null;
+      callbacks.forEach(function(done) {
+        done(window.HirdavatPrintEngine);
+      });
+    };
+    script.onerror = function() {
+      var callbacks = window.__hpe_engine_loading || [];
+      window.__hpe_engine_loading = null;
+      callbacks.forEach(function(done) {
+        done(null);
+      });
+    };
+
+    document.head.appendChild(script);
+  }
 
   function publish(result) {
     instance.publishState("is_valid", !!result.isValid);
@@ -34,7 +69,7 @@ function(instance, properties, context) {
 
     var iframe = document.createElement("iframe");
     iframe.title = "Print preview";
-    iframe.setAttribute("sandbox", "allow-same-origin");
+    iframe.setAttribute("sandbox", "allow-same-origin allow-scripts");
     iframe.style.cssText =
       "display:block;width:100%;height:360px;border:1px solid #d1d5db;border-radius:6px;background:#fff;box-sizing:border-box;";
     iframe.srcdoc = engine.parseAndRender(properties.document_json, {
@@ -45,10 +80,54 @@ function(instance, properties, context) {
     root.appendChild(iframe);
   }
 
+  function run(engine) {
+    if (!engine) {
+      var missingEngine = {
+        isValid: false,
+        errorMessage: "HirdavatPrintEngine shared library yuklenmedi.",
+        documentType: "",
+        itemCount: 0,
+        html: ""
+      };
+
+      instance.data.hpe_last_result = missingEngine;
+      publish(missingEngine);
+      renderPreview(missingEngine);
+      return;
+    }
+
+    var result = engine.parseAndRender(properties.document_json, {
+      includeToolbar: true,
+      compact: false
+    });
+
+    instance.data.hpe_instance_id = instanceId;
+    instance.data.hpe_last_result = result;
+    engine.setInstanceDocument(instanceId, result);
+
+    publish(result);
+    renderPreview(result);
+
+    if (debugMode) {
+      if (result.isValid) {
+        console.info("[HirdavatPrintEngine] document ready", {
+          instance_id: instanceId,
+          document_type: result.documentType,
+          item_count: result.itemCount
+        });
+      } else {
+        console.warn("[HirdavatPrintEngine] document invalid", {
+          instance_id: instanceId,
+          error: result.errorMessage
+        });
+      }
+    }
+  }
+
   if (!engine) {
     var missingEngine = {
       isValid: false,
-      errorMessage: "HirdavatPrintEngine shared library yuklenmedi.",
+      errorMessage: "HirdavatPrintEngine yukleniyor...",
       documentType: "",
       itemCount: 0,
       html: ""
@@ -57,33 +136,9 @@ function(instance, properties, context) {
     instance.data.hpe_last_result = missingEngine;
     publish(missingEngine);
     renderPreview(missingEngine);
+    loadEngine(run);
     return;
   }
 
-  var result = engine.parseAndRender(properties.document_json, {
-    includeToolbar: true,
-    compact: false
-  });
-
-  instance.data.hpe_instance_id = instanceId;
-  instance.data.hpe_last_result = result;
-  engine.setInstanceDocument(instanceId, result);
-
-  publish(result);
-  renderPreview(result);
-
-  if (debugMode) {
-    if (result.isValid) {
-      console.info("[HirdavatPrintEngine] document ready", {
-        instance_id: instanceId,
-        document_type: result.documentType,
-        item_count: result.itemCount
-      });
-    } else {
-      console.warn("[HirdavatPrintEngine] document invalid", {
-        instance_id: instanceId,
-        error: result.errorMessage
-      });
-    }
-  }
+  run(engine);
 }

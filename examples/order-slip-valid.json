@@ -1,27 +1,37 @@
 {
   "document_type": "order_slip",
-  "document_no": "SP-123",
-  "date": "18/05/2026",
+  "document_no": "OZG2026-17",
+  "date": "13/05/2026",
   "title": "Sipariş Fişi",
+  "print_style": {
+    "page_margin_mm": 10,
+    "logo_width_mm": 32,
+    "logo_height_mm": 12,
+    "body_font_px": 7.2,
+    "table_font_px": 7.1,
+    "header_gap_mm": 15
+  },
   "company": {
     "name": "Özgünbora Teknik Hırd. ve Büro Kırt. San. Tic. Ltd. Şti.",
-    "address": "Örnek Mah. Sanayi Cad. No: 10 İstanbul",
-    "phone": "+90 212 000 00 00",
-    "email": "info@example.com",
-    "logo_url": ""
+    "address": "Oto Sanayi Sitesi No: 12 Başakşehir / İstanbul",
+    "phone": "0 (232) 257 62 57",
+    "email": "anbarlamedya@gmail.com",
+    "logo_url": "https://res.cloudinary.com/demo/image/upload/w_240,h_80,c_fit/sample.png"
   },
   "customer": {
-    "name": "ABC Endüstriyel Tedarik A.Ş.",
-    "address": "Müşteri adresi uzun yazıldığında hücre içinde kırılarak devam eder.",
-    "phone": "+90 216 000 00 00",
-    "tax_office": "Kadıköy",
-    "tax_no": "1234567890"
+    "name": "KODSUZ WEB VE YÜKSEK TEKNOLOJİ SAN. TİC. LTD. ŞTİ.",
+    "address": "2 CADDE NO:3 KÜÇÜKYALI",
+    "phone": "",
+    "tax_office": "",
+    "tax_no": "",
+    "document_type": "E-Fatura",
+    "delivery_address": "-"
   },
   "order": {
     "status": "Hazırlanacak",
-    "delivery_address": "Depo teslim",
+    "delivery_address": "-",
     "shipping_method": "Kargo",
-    "note": "Sipariş hazırlanırken ürün notları kontrol edilecek."
+    "note": ""
   },
   "items": [
     {
@@ -30,8 +40,19 @@
       "description": "",
       "quantity": "2",
       "unit": "Adet",
+      "kdv": "%20",
       "status": "Hazırlanacak",
-      "note": ""
+      "note": "-"
+    },
+    {
+      "code": "CX0032",
+      "name": "TRAFİMET KABLO FİŞİ ERKEK 50MM 315 AMP",
+      "description": "",
+      "quantity": "5",
+      "unit": "Adet",
+      "kdv": "%10",
+      "status": "Hazırlanacak",
+      "note": "-"
     }
   ]
 }

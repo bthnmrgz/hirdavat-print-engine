@@ -20,6 +20,7 @@ function withItems(count) {
     description: index % 3 === 0 ? "Opsiyonel aciklama satiri" : "",
     quantity: String((index % 5) + 1),
     unit: "Adet",
+    kdv: index % 2 === 0 ? "%20" : "%10",
     status: index % 2 === 0 ? "Hazırlanacak" : "Beklemede",
     note: index % 4 === 0 ? "Raf kontrolu" : ""
   }));
@@ -35,6 +36,8 @@ for (const count of [1, 20, 60]) {
   assert.strictEqual(result.itemCount, count);
   assert.ok(result.html.includes("<table class=\"hpe-items\">"));
   assert.ok(result.html.includes("<thead><tr>"));
+  assert.ok(result.html.includes("Stok Kodu"));
+  assert.ok(result.html.includes("Müşteri Bilgileri"));
   assert.ok(result.html.includes("@page{margin:10mm;}"));
 }
 
