@@ -1,0 +1,37 @@
+{
+  "document_type": "order_slip",
+  "document_no": "SP-123",
+  "date": "18/05/2026",
+  "title": "Sipariş Fişi",
+  "company": {
+    "name": "Özgünbora Teknik Hırd. ve Büro Kırt. San. Tic. Ltd. Şti.",
+    "address": "Örnek Mah. Sanayi Cad. No: 10 İstanbul",
+    "phone": "+90 212 000 00 00",
+    "email": "info@example.com",
+    "logo_url": ""
+  },
+  "customer": {
+    "name": "ABC Endüstriyel Tedarik A.Ş.",
+    "address": "Müşteri adresi uzun yazıldığında hücre içinde kırılarak devam eder.",
+    "phone": "+90 216 000 00 00",
+    "tax_office": "Kadıköy",
+    "tax_no": "1234567890"
+  },
+  "order": {
+    "status": "Hazırlanacak",
+    "delivery_address": "Depo teslim",
+    "shipping_method": "Kargo",
+    "note": "Sipariş hazırlanırken ürün notları kontrol edilecek."
+  },
+  "items": [
+    {
+      "code": "CX0070",
+      "name": "KAYNAK KABLO JAKI ADAPTORU",
+      "description": "",
+      "quantity": "2",
+      "unit": "Adet",
+      "status": "Hazırlanacak",
+      "note": ""
+    }
+  ]
+}
