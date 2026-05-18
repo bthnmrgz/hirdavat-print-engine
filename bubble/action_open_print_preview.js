@@ -1,6 +1,6 @@
 function(instance, properties, context) {
   var engine = window.HirdavatPrintEngine;
-  var engineUrl = "https://cdn.jsdelivr.net/gh/bthnmrgz/hirdavat-print-engine@v0.1.1/src/hirdavat-print-engine.js";
+  var engineUrl = "https://cdn.jsdelivr.net/gh/bthnmrgz/hirdavat-print-engine@v0.1.2/src/hirdavat-print-engine.js";
 
   function loadEngine(callback) {
     if (window.HirdavatPrintEngine) {

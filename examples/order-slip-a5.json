@@ -1,0 +1,57 @@
+{
+  "document_type": "order_slip",
+  "document_no": "SP-A5-001",
+  "date": "19/05/2026",
+  "title": "Sipariş Fişi",
+  "print_style": {
+    "paper_size": "a5"
+  },
+  "company": {
+    "name": "Özgünbora Teknik Hırd. ve Büro Kırt. San. Tic. Ltd. Şti.",
+    "address": "İkitelli OSB Mah. Metal İş Sanayi Sitesi No: 12 Başakşehir / İstanbul",
+    "phone": "+90 212 000 00 00",
+    "email": "info@ozgunbora.com",
+    "logo_url": ""
+  },
+  "customer": {
+    "name": "ABC Endüstriyel Tedarik A.Ş.",
+    "address": "Barbaros Mah. Uzun Müşteri Adresi Sok. No: 45 Kat: 3 Ataşehir / İstanbul",
+    "phone": "+90 216 000 00 00",
+    "tax_no": "1234567890",
+    "document_type": "E-Fatura",
+    "delivery_address": "Depo teslim"
+  },
+  "order": {
+    "status": "Hazırlanacak",
+    "delivery_address": "Depo teslim",
+    "shipping_method": "Kargo",
+    "note": "A5 test fişidir."
+  },
+  "items": [
+    {
+      "code": "CX0070",
+      "name": "KAYNAK KABLO JAKI ADAPTORU",
+      "quantity": "2",
+      "unit": "Adet",
+      "kdv": "%20",
+      "note": "-"
+    },
+    {
+      "code": "ELD-120",
+      "name": "ÇOK UZUN ÜRÜN ADI TESTİ - DAR HÜCREDE WRAP KONTROLÜ",
+      "description": "A5 çıktıda stok ismi kolonu harf harf kırılmamalı.",
+      "quantity": "5",
+      "unit": "Takım",
+      "kdv": "%10",
+      "note": "Stok kontrol"
+    },
+    {
+      "code": "HM-445",
+      "name": "HORTUM MANDALI PASLANMAZ",
+      "quantity": "20",
+      "unit": "Adet",
+      "kdv": "%20",
+      "note": "Kutu ile ver"
+    }
+  ]
+}

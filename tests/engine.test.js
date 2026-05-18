@@ -38,7 +38,19 @@ for (const count of [1, 20, 60]) {
   assert.ok(result.html.includes("<thead><tr>"));
   assert.ok(result.html.includes("Stok Kodu"));
   assert.ok(result.html.includes("Müşteri Bilgileri"));
-  assert.ok(result.html.includes("@page{margin:10mm;}"));
+  assert.ok(result.html.includes("@page{size:A4 portrait;margin:10mm;}"));
+  assert.ok(result.html.includes("@media screen and (max-width:760px)"));
+}
+
+{
+  const sample = withItems(3);
+  sample.print_style = { paper_size: "a5" };
+
+  const result = engine.parseAndRender(JSON.stringify(sample));
+  assert.strictEqual(result.isValid, true);
+  assert.ok(result.html.includes("@page{size:A5 portrait;margin:6mm;}"));
+  assert.ok(result.html.includes("--hpe-document-width:136mm;"));
+  assert.ok(result.html.includes("--hpe-col-code:20mm;"));
 }
 
 {
