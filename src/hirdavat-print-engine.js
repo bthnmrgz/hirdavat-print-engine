@@ -7,7 +7,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function() {
   "use strict";
 
-  var VERSION = "0.1.2";
+  var VERSION = "0.1.3";
   var registry = {};
 
   function isObject(value) {
@@ -48,12 +48,6 @@
     var parsed = Number(value);
     if (!isFinite(parsed)) return fallback;
     return Math.min(Math.max(parsed, min), max);
-  }
-
-  function normalizePaperSize(value) {
-    value = trimText(value).toLowerCase();
-    if (value === "a5" || value === "a5 portrait") return "a5";
-    return "a4";
   }
 
   function parseDocumentJson(input) {
@@ -120,27 +114,19 @@
 
   function normalizePrintStyle(value) {
     value = isObject(value) ? value : {};
-    var paperSize = normalizePaperSize(firstText(value.paper_size, value.page_size, value.format));
-    var isA5 = paperSize === "a5";
 
     return {
-      paper_size: paperSize,
-      page_margin_mm: numberInRange(value.page_margin_mm, isA5 ? 6 : 10, 3, 20),
-      logo_width_mm: numberInRange(value.logo_width_mm, isA5 ? 25 : 32, 16, 60),
-      logo_height_mm: numberInRange(value.logo_height_mm, isA5 ? 9 : 12, 6, 28),
-      body_font_px: numberInRange(value.body_font_px, isA5 ? 5.2 : 7.2, 4.8, 11),
-      table_font_px: numberInRange(value.table_font_px, isA5 ? 5.1 : 7.1, 4.8, 10),
-      header_gap_mm: numberInRange(value.header_gap_mm, isA5 ? 9 : 15, 4, 28),
-      document_width_mm: numberInRange(value.document_width_mm, isA5 ? 136 : 190, 90, 210),
-      header_meta_width_mm: numberInRange(value.header_meta_width_mm, isA5 ? 18 : 24, 14, 36),
-      header_gap_column_mm: numberInRange(value.header_gap_column_mm, isA5 ? 7 : 12, 3, 24),
-      col_code_mm: numberInRange(value.col_code_mm, isA5 ? 20 : 25, 14, 36),
-      col_qty_mm: numberInRange(value.col_qty_mm, isA5 ? 9 : 16, 7, 22),
-      col_unit_mm: numberInRange(value.col_unit_mm, isA5 ? 11 : 17, 8, 24),
-      col_vat_mm: numberInRange(value.col_vat_mm, isA5 ? 9 : 13, 7, 20),
-      col_explanation_mm: numberInRange(value.col_explanation_mm, isA5 ? 24 : 46, 14, 64),
-      table_cell_padding_y_mm: numberInRange(value.table_cell_padding_y_mm, isA5 ? 1.1 : 2, 0.6, 4),
-      table_cell_padding_x_mm: numberInRange(value.table_cell_padding_x_mm, isA5 ? 0.9 : 1.4, 0.5, 3)
+      page_margin_mm: numberInRange(value.page_margin_mm, 8, 3, 20),
+      logo_width_mm: numberInRange(value.logo_width_mm, 30, 16, 60),
+      logo_height_mm: numberInRange(value.logo_height_mm, 11, 6, 28),
+      body_font_px: numberInRange(value.body_font_px, 6.6, 4.8, 11),
+      table_font_px: numberInRange(value.table_font_px, 6.4, 4.8, 10),
+      header_gap_mm: numberInRange(value.header_gap_mm, 12, 4, 28),
+      document_width_mm: numberInRange(value.document_width_mm, 190, 90, 210),
+      header_meta_width_mm: numberInRange(value.header_meta_width_mm, 22, 14, 36),
+      header_gap_column_mm: numberInRange(value.header_gap_column_mm, 7, 2, 24),
+      table_cell_padding_y_mm: numberInRange(value.table_cell_padding_y_mm, 1.4, 0.6, 4),
+      table_cell_padding_x_mm: numberInRange(value.table_cell_padding_x_mm, 1, 0.5, 3)
     };
   }
 
@@ -270,11 +256,6 @@
       "--hpe-document-width:" + style.document_width_mm + "mm;" +
       "--hpe-header-meta-width:" + style.header_meta_width_mm + "mm;" +
       "--hpe-header-column-gap:" + style.header_gap_column_mm + "mm;" +
-      "--hpe-col-code:" + style.col_code_mm + "mm;" +
-      "--hpe-col-qty:" + style.col_qty_mm + "mm;" +
-      "--hpe-col-unit:" + style.col_unit_mm + "mm;" +
-      "--hpe-col-vat:" + style.col_vat_mm + "mm;" +
-      "--hpe-col-explanation:" + style.col_explanation_mm + "mm;" +
       "--hpe-table-pad-y:" + style.table_cell_padding_y_mm + "mm;" +
       "--hpe-table-pad-x:" + style.table_cell_padding_x_mm + "mm;" +
       "}"
@@ -282,8 +263,7 @@
   }
 
   function pageRule(style) {
-    var size = style.paper_size === "a5" ? "size:A5 portrait;" : "size:A4 portrait;";
-    return "@page{" + size + "margin:" + style.page_margin_mm + "mm;}";
+    return "@page{margin:" + style.page_margin_mm + "mm;}";
   }
 
   function baseStyles(style) {
@@ -316,12 +296,12 @@
       ".hpe-items th{background:#fff;color:#111827;border:1px solid #d4d7dc;padding:var(--hpe-table-pad-y) var(--hpe-table-pad-x);text-align:center;font-weight:400;}" +
       ".hpe-items td{border:1px solid #d4d7dc;padding:var(--hpe-table-pad-y) var(--hpe-table-pad-x);vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;}" +
       ".hpe-items tr{break-inside:avoid;page-break-inside:avoid;}" +
-      ".hpe-col-code{width:var(--hpe-col-code);}" +
-      ".hpe-col-name{width:auto;}" +
-      ".hpe-col-qty{width:var(--hpe-col-qty);text-align:center;}" +
-      ".hpe-col-unit{width:var(--hpe-col-unit);text-align:center;}" +
-      ".hpe-col-vat{width:var(--hpe-col-vat);text-align:center;}" +
-      ".hpe-col-explanation{width:var(--hpe-col-explanation);}" +
+      ".hpe-col-code{width:16%;}" +
+      ".hpe-col-name{width:34%;}" +
+      ".hpe-col-qty{width:9%;text-align:center;}" +
+      ".hpe-col-unit{width:10%;text-align:center;}" +
+      ".hpe-col-vat{width:8%;text-align:center;}" +
+      ".hpe-col-explanation{width:23%;}" +
       ".hpe-empty{text-align:center;color:#64748b;padding:16px!important;}" +
       ".hpe-footer{margin-top:8mm;color:#111827;white-space:pre-wrap;overflow-wrap:anywhere;}" +
       ".hpe-compact .hpe-page{padding:7mm;}" +
@@ -333,6 +313,8 @@
       ".hpe-page-shell{padding:0;}" +
       ".hpe-document{width:auto;max-width:none;margin:0;box-shadow:none;}" +
       ".hpe-page{padding:0;}" +
+      ".hpe-slip-header{grid-template-columns:minmax(0,1fr) minmax(0,1fr) var(--hpe-header-meta-width);gap:var(--hpe-header-column-gap);}" +
+      ".hpe-items{width:100%;}" +
       "}" +
       "@media screen and (max-width:760px){" +
       ".hpe-page-shell{padding:0;}" +

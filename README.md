@@ -100,7 +100,7 @@ Optional missing fields render as empty text.
 - The preview window includes `Yazdır`, `Kapat`, and `Kompakt görünüm`.
 - Browser header/footer cannot be controlled by the plugin; the user must disable it in the print dialog.
 - Supports optional `print_style` values in `document_json` for page margin, logo size, font size, and header spacing.
-- Supports A5 with `print_style.paper_size: "a5"`; this applies A5 `@page`, tighter columns, smaller fonts, and print-safe responsive rules.
+- Browser paper size selection stays in the print dialog. The print CSS is adaptive, so A4 and A5 can be selected by the user without changing JSON.
 
 ## Local Test
 
