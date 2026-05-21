@@ -1,0 +1,51 @@
+{
+  "document_type": "order_slip",
+  "document_no": "MAKBUZ-2026-1",
+  "date": "20/05/2026",
+  "title": "Makbuz",
+  "print_style": {
+    "paper_size": "a5",
+    "page_margin_mm": 8,
+    "body_font_px": 7,
+    "table_font_px": 6.8,
+    "table_cell_padding_y_mm": 1.4,
+    "table_cell_padding_x_mm": 1
+  },
+  "company": {
+    "name": "Özgünbora Teknik Hırd. ve Büro Kırt. San. Tic. Ltd. Şti.",
+    "address": "Oto Sanayi Sitesi No: 12 Başakşehir / İstanbul",
+    "phone": "0 (232) 257 62 57",
+    "email": "anbarlamedya@gmail.com"
+  },
+  "customer": {
+    "name": "KODSUZ WEB VE YÜKSEK TEKNOLOJİ SAN. TİC. LTD. ŞTİ.",
+    "address": "2 CADDE NO:3 KÜÇÜKYALI",
+    "document_type": "E-Fatura"
+  },
+  "order": {
+    "shipping_method": "Elden",
+    "note": "Ödeme peşin alınmıştır."
+  },
+  "table": {
+    "columns": [
+      { "key": "date", "title": "Tarih", "width": 16, "align": "center" },
+      { "key": "description", "title": "Açıklama", "width": 46 },
+      { "key": "payment_type", "title": "Ödeme", "width": 18, "align": "center" },
+      { "key": "amount", "title": "Tutar", "width": 20, "align": "right" }
+    ],
+    "rows": [
+      {
+        "date": "20/05/2026",
+        "description": "Sipariş tahsilatı",
+        "payment_type": "Nakit",
+        "amount": "1.250,00 TL"
+      },
+      {
+        "date": "20/05/2026",
+        "description": "Kargo bedeli",
+        "payment_type": "Nakit",
+        "amount": "150,00 TL"
+      }
+    ]
+  }
+}

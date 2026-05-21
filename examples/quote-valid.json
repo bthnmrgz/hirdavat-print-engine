@@ -1,0 +1,60 @@
+{
+  "document_type": "quote",
+  "document_no": "OZG2026-34",
+  "date": "15/05/2026",
+  "title": "Teklif",
+  "print_style": {
+    "page_margin_mm": 10,
+    "body_font_px": 7.2,
+    "table_font_px": 6.9
+  },
+  "company": {
+    "name": "Ozgunbora Teknik Hird. ve Buro Kirt. San. Tic. Ltd. Sti.",
+    "address": "Oto Sanayi Sitesi No: 12 Basaksehir / Istanbul",
+    "phone": "0 (232) 257 62 57",
+    "email": "anbarlamedya@gmail.com"
+  },
+  "customer": {
+    "name": "KODSUZ WEB VE YUKSEK TEKNOLOJI SAN. TIC. LTD. STI.",
+    "address": "2 CADDE NO:3 KUCUKYALI",
+    "document_type": "E-Fatura"
+  },
+  "items": [
+    {
+      "code": "CX0070",
+      "name": "KAYNAK KABLO JAKI ADAPTORU",
+      "quantity": "2",
+      "unit": "Adet",
+      "unit_price": "4.250,00",
+      "kdv": "%20",
+      "total": "8.500,00"
+    },
+    {
+      "code": "CX0032",
+      "name": "TRAFIMET KABLO FISI ERKEK 50MM 315 AMP",
+      "quantity": "5",
+      "unit": "Adet",
+      "unit_price": "3.115,88",
+      "kdv": "%20",
+      "total": "15.579,41"
+    }
+  ],
+  "detail_fields": [
+    { "label": "Odeme:", "value": "" },
+    { "label": "Nakliye:", "value": "" },
+    { "label": "Teslim Yeri:", "value": "" },
+    { "label": "Teslim Tarihi:", "value": "" }
+  ],
+  "total_rows": [
+    { "label": "Ara Toplam", "value": "24.079,41" },
+    { "label": "Ara Toplam Indirimi", "value": "4.093,50" },
+    { "label": "Brut Toplam", "value": "19.985,91" },
+    { "label": "Stopaj Tutari", "value": "3.397,60" },
+    { "label": "Toplam KDV", "value": "3.997,18" },
+    { "label": "Genel Toplam", "value": "20.585,49", "emphasis": true }
+  ],
+  "signature": {
+    "left_text": "Ozgunbora Teknik Hird. ve Buro Kirt. San. Tic. Ltd. Sti.",
+    "right_text": "Teklif Onayi\nKase/Imza"
+  }
+}

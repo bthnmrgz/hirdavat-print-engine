@@ -1,109 +1,107 @@
-# Hirdavat Print Engine
+# Hirdavat QuestPDF API
 
-Template-based Bubble print plugin v2. This version does not clone Bubble page DOM. It reads `document_json`, validates a known data contract, and produces controlled HTML/CSS for print.
+ASP.NET 8 + QuestPDF service for rendering Hirdavat print JSON as PDF.
 
-## Plugin Shape
-
-Plugin name suggestion:
-
-`Hirdavat Print Engine`
-
-Element fields:
-
-- `instance_id` - text id for multiple print elements on the same page.
-- `document_json` - text JSON payload.
-- `auto_render_preview` - yes/no, renders a compact preview inside the element.
-- `debug_mode` - yes/no, logs parse/layout state to the console.
-
-Element states:
-
-- `is_valid` - yes/no.
-- `error_message` - text.
-- `document_type` - text, currently `order_slip`.
-- `item_count` - number.
-- `last_rendered_html` - text, for debugging.
-
-Element workflow action:
-
-- `Open Print Preview`
-- Field: `document_json_override` as optional text.
+The old Bubble plugin/browser-print layer has been removed. This repository now keeps the server-side PDF renderer, deployment files, and sample JSON payloads.
 
 ## Files
 
-- `src/hirdavat-print-engine.js` - shared engine. Add this as the Bubble plugin shared/frontend script before element and action code.
-- `bubble/element_initialize.js` - element initialize code.
-- `bubble/element_update.js` - element update code.
-- `bubble/action_open_print_preview.js` - element action code.
-- `examples/order-slip-valid.json` - valid order slip payload.
-- `tests/engine.test.js` - Node smoke tests for validation and rendering.
+- `questpdf-service/` - ASP.NET + QuestPDF PDF API.
+- `examples/order-slip-valid.json` - order slip payload.
+- `examples/order-slip-a5.json` - A5 order slip payload.
+- `examples/order-slip-custom-table.json` - custom table payload.
+- `examples/order-slip-customerless.json` - payload without a customer block.
+- `examples/quote-valid.json` - quote payload.
+- `examples/receipt-valid.json` - receipt payload.
+- `docker-compose.yml` - local/production compose entrypoint.
+- `deploy/Caddyfile` - Caddy reverse proxy config.
+- `launch/` - local macOS launchd helpers.
+- `docs/` - hosting, runbook, and integration notes.
+
+## Run Locally
+
+```bash
+QUESTPDF_API_KEY=local-dev-key /Users/batuhanmerguz/.dotnet/dotnet run --project questpdf-service/HirdavatQuestPdf.Api.csproj --urls http://localhost:5159
+```
+
+Health check:
+
+```bash
+curl -i http://localhost:5159/health
+```
+
+Render a PDF binary:
+
+```bash
+curl -X POST http://localhost:5159/render/order-slip \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/order-slip-valid.json \
+  --output /tmp/order-slip-questpdf.pdf
+```
+
+Render and receive a public URL:
+
+```bash
+curl -X POST http://localhost:5159/render/order-slip-url \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/quote-valid.json
+```
 
 ## Data Contract
 
-The first production template supports only:
+Endpoint names stay backwards-compatible, but the request body selects the layout with `document_type`:
+
+- `quote` - teklif layout.
+- `receipt` - tahsilat/tediyat makbuzu layout.
+- `order_slip` - sipariş fişi layout.
+
+Common fields:
 
 ```json
 {
-  "document_type": "order_slip",
-  "document_no": "SP-123",
-  "date": "18/05/2026",
-  "title": "Sipariş Fişi",
-  "company": {
-    "name": "Özgünbora Teknik Hırd. ve Büro Kırt. San. Tic. Ltd. Şti.",
-    "address": "...",
-    "phone": "...",
-    "email": "...",
-    "logo_url": "..."
-  },
-  "customer": {
-    "name": "...",
-    "address": "...",
-    "phone": "...",
-    "tax_office": "...",
-    "tax_no": "..."
-  },
-  "order": {
-    "status": "Hazırlanacak",
-    "delivery_address": "...",
-    "shipping_method": "...",
-    "note": "..."
-  },
-  "items": [
-    {
-      "code": "CX0070",
-      "name": "KAYNAK KABLO JAKI ADAPTORU",
-      "description": "",
-      "quantity": "2",
-      "unit": "Adet",
-      "status": "Hazırlanacak",
-      "note": ""
-    }
-  ]
+  "document_type": "quote",
+  "document_no": "OZG2026-34",
+  "date": "15/05/2026",
+  "title": "Teklif",
+  "company": {},
+  "customer": null,
+  "print_style": {}
 }
 ```
 
-Validation errors are returned when any required field is missing:
+Validation rules:
 
-- `document_type`
-- `items`
-- `company.name`
-- `customer.name`
+- `document_type` must be `quote`, `receipt`, or `order_slip`.
+- `company.name` is required.
+- `quote` and `order_slip` require `items` or `table`.
+- `receipt` requires `payments` or `table`.
+- `customer` is optional. If omitted, null, or empty, the customer header block is hidden.
 
-Optional missing fields render as empty text.
+Bubble or any caller should send formatted visible strings for money and totals. The service validates and renders; it does not calculate KDV, discount, withholding, or grand totals.
 
-## Rendering Notes
-
-- Uses a real table for product rows.
-- Uses `@page { margin: 10mm; }`.
-- Leaves paper size and orientation to the browser print dialog.
-- Repeats `thead` on printed pages where the browser supports it.
-- Does not use Bubble DOM, viewport size, Chrome zoom, or Bubble responsive layout.
-- The preview window includes `Yazdır`, `Kapat`, and `Kompakt görünüm`.
-- Browser header/footer cannot be controlled by the plugin; the user must disable it in the print dialog.
-- Supports optional `print_style` values in `document_json` for page margin, logo size, font size, and header spacing.
-- Browser paper size selection stays in the print dialog. The print CSS is adaptive, so A4 and A5 can be selected by the user without changing JSON.
-
-## Local Test
+## Examples
 
 ```bash
-node tests/engine.test.js
+curl -X POST http://localhost:5159/render/order-slip-url \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/quote-valid.json
+
+curl -X POST http://localhost:5159/render/order-slip-url \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/receipt-valid.json
+
+curl -X POST http://localhost:5159/render/order-slip-url \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/order-slip-customerless.json
+```
+
+## Build
+
+```bash
+/Users/batuhanmerguz/.dotnet/dotnet build questpdf-service/HirdavatQuestPdf.Api.csproj
 ```

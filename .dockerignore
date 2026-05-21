@@ -1,0 +1,7 @@
+.git
+.env
+**/bin/
+**/obj/
+**/generated-pdfs/
+node_modules/
+*.log

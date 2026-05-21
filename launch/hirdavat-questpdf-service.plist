@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hirdavat.questpdf.service</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/batuhanmerguz/.dotnet/dotnet</string>
+    <string>/Users/batuhanmerguz/Documents/Printer v2/questpdf-service/bin/Debug/net8.0/HirdavatQuestPdf.Api.dll</string>
+    <string>--urls</string>
+    <string>http://localhost:5159</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/batuhanmerguz/Documents/Printer v2/questpdf-service</string>
+  <key>StandardOutPath</key>
+  <string>/private/tmp/hirdavat-questpdf-service.log</string>
+  <key>StandardErrorPath</key>
+  <string>/private/tmp/hirdavat-questpdf-service.err.log</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>

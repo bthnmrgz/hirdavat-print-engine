@@ -1,0 +1,3 @@
+pdf-api.hirdavat.ai {
+    reverse_proxy questpdf-api:5159
+}

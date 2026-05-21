@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hirdavat.questpdf.ngrok</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/ngrok</string>
+    <string>http</string>
+    <string>5159</string>
+    <string>--url</string>
+    <string>https://your-ngrok-domain.example</string>
+    <string>--log</string>
+    <string>stdout</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/batuhanmerguz/Documents/Printer v2</string>
+  <key>StandardOutPath</key>
+  <string>/private/tmp/hirdavat-questpdf-ngrok.log</string>
+  <key>StandardErrorPath</key>
+  <string>/private/tmp/hirdavat-questpdf-ngrok.err.log</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <false/>
+</dict>
+</plist>

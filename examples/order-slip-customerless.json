@@ -1,0 +1,26 @@
+{
+  "document_type": "order_slip",
+  "document_no": "OZG2026-CUSTOMERLESS",
+  "date": "15/05/2026",
+  "title": "Siparis Fisi",
+  "company": {
+    "name": "Ozgunbora Teknik Hird. ve Buro Kirt. San. Tic. Ltd. Sti.",
+    "address": "Oto Sanayi Sitesi No: 12 Basaksehir / Istanbul",
+    "phone": "0 (232) 257 62 57"
+  },
+  "customer": null,
+  "order": {
+    "shipping_method": "Kargo",
+    "note": "Musteri bloku gonderilmedigi icin baslikta gizlenir."
+  },
+  "items": [
+    {
+      "code": "CX0070",
+      "name": "KAYNAK KABLO JAKI ADAPTORU",
+      "quantity": "2",
+      "unit": "Adet",
+      "kdv": "%20",
+      "note": "-"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "document_type": "receipt",
+  "document_no": "MAKBUZ-2026-1",
+  "date": "15/05/2026",
+  "title": "Tahsilat Makbuzu",
+  "company": {
+    "name": "Ozgunbora Teknik Hird. ve Buro Kirt. San. Tic. Ltd. Sti.",
+    "address": "Oto Sanayi Sitesi No: 12 Basaksehir / Istanbul",
+    "phone": "0 (232) 257 62 57"
+  },
+  "customer": {
+    "name": "KODSUZ WEB VE YUKSEK TEKNOLOJI SAN. TIC. LTD. STI.",
+    "address": "2 CADDE NO:3 KUCUKYALI"
+  },
+  "receipt_type": "collection",
+  "payments": [
+    {
+      "payment_type": "Musteri Ceki",
+      "account": "Cek Kasasi",
+      "bank_branch": "-",
+      "due_date": "12/05/2026",
+      "check_no": "-",
+      "amount": "150.000,00"
+    },
+    {
+      "payment_type": "Nakit",
+      "account": "Merkez Kasa",
+      "bank_branch": "-",
+      "due_date": "15/05/2026",
+      "check_no": "-",
+      "amount": "420.000,00"
+    }
+  ],
+  "payment_totals": [
+    { "label": "Musteri Ceki", "value": "150.000,00 TL" },
+    { "label": "Nakit", "value": "420.000,00 TL" },
+    { "label": "Toplam Meblag", "value": "570.000,00 TL", "emphasis": true }
+  ]
+}

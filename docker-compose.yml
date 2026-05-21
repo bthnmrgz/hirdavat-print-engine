@@ -1,0 +1,40 @@
+services:
+  questpdf-api:
+    build:
+      context: .
+      dockerfile: questpdf-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      QUESTPDF_API_KEY: ${QUESTPDF_API_KEY:?set QUESTPDF_API_KEY in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://kodsuzai.bubbleapps.io,https://hirdavat.ai}
+      PDF_RETENTION_HOURS: ${PDF_RETENTION_HOURS:-24}
+    volumes:
+      - questpdf-generated-pdfs:/app/generated-pdfs
+    expose:
+      - "5159"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      - questpdf-api
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - questpdf-api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  questpdf-generated-pdfs:
+  caddy-data:
+  caddy-config:
