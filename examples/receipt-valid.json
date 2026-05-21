@@ -34,6 +34,7 @@
   "payment_totals": [
     { "label": "Musteri Ceki", "value": "150.000,00 TL" },
     { "label": "Nakit", "value": "420.000,00 TL" },
+    { "label": "Kredi Karti", "value": "0,00 TL", "hide_if_zero": true },
     { "label": "Toplam Meblag", "value": "570.000,00 TL", "emphasis": true }
   ]
 }

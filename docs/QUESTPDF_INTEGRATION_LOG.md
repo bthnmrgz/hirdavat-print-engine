@@ -202,11 +202,107 @@ Endpoint kontrolleri:
 - `/render/order-slip` -> `200 application/pdf`
 - `/render/order-slip-url` -> `200 application/json`
 
+## 2026-05-21 Print JSON Genisletme ve Production Deploy
+
+Istek:
+
+- `document_type` sadece `order_slip` ile sinirli kalmayacak.
+- `quote`, `receipt`, `order_slip` ayni endpoint isimleriyle desteklenecek.
+- `customer` opsiyonel olacak; bos/null geldiginde header'daki musteri blogu render edilmeyecek.
+- Bubble tum para/tutar degerlerini formatli string olarak gonderecek; server hesaplama yapmayacak.
+- Bubble plugin/browser-print dosyalari artik kullanilmayacak ve repo server-side QuestPDF API'ye indirgenecek.
+
+Kod guncellemeleri:
+
+- `OrderSlipPayload` yerine genisletilmis `PrintDocumentPayload` modeli kullanildi.
+- `Validate` akisi `quote`, `receipt`, `order_slip` degerlerini kabul edecek sekilde guncellendi.
+- `company.name` zorunlu kaldi.
+- `customer.name` zorunlulugu kaldirildi.
+- `quote` ve `order_slip` icin `items` veya `table` zorunlu.
+- `receipt` icin `payments` veya `table` zorunlu.
+- `table.columns` ve `columns[].key` validasyonu korundu.
+- `quote` layout'u urun/hizmet tablosu, `detail_fields`, `total_rows` ve `signature` alanlarini render ediyor.
+- `receipt` layout'u `payments` ve `payment_totals` alanlarini render ediyor.
+- `order_slip` mevcut siparis fisi davranisini koruyor.
+
+Repo temizligi:
+
+- Bubble plugin dosyalari kaldirildi.
+- Eski HTML/browser print engine ve ona bagli Node testi kaldirildi.
+- README QuestPDF API odakli olacak sekilde yeniden yazildi.
+- `.gitignore` build ciktilari, generated PDF'ler, `.env` ve `.DS_Store` icin genisletildi.
+- Generated PDF'ler, build ciktilari ve hassas degerler commit'e alinmadi.
+
+Ornek JSON'lar:
+
+- `examples/quote-valid.json`
+- `examples/receipt-valid.json`
+- `examples/order-slip-customerless.json`
+- `examples/order-slip-custom-table.json`
+
+Git:
+
+```text
+a8acec1 feat: add questpdf print API
+```
+
+Production deploy:
+
+- Hostinger uzerindeki `/opt/hirdavat-print-engine` klasoru git repo olmadigi icin kaynak dosyalar `rsync` ile senkronize edildi.
+- `.env`, build ciktilari, generated PDF'ler ve secret iceren dosyalar senkronizasyon disinda birakildi.
+- `QUESTPDF_API_KEY` rotate edildi.
+- `docker compose up -d --build questpdf-api caddy` ile QuestPDF API container'i yeniden build/start edildi.
+
+Production dogrulamalari:
+
+- `GET https://pdf-api.hirdavat.ai/health` -> `200`
+- API key olmadan `/render/order-slip-url` -> `401`
+- Yeni API key ile `quote` payload -> `200` ve `pdf_url`
+- Yeni API key ile `receipt` payload -> `200` ve `pdf_url`
+- Gecersiz `document_type` artik guncel hata mesajini donuyor:
+
+```text
+document_type 'quote', 'receipt' veya 'order_slip' olmalidir.
+```
+
+Not:
+
+Yeni API key Bubble API Connector'daki `X-Api-Key` header degeriyle eslestirilmelidir. Key dokumanlara yazilmadi.
+
+## 2026-05-21 Makbuz Sifir Toplam Satirlari
+
+Istek:
+
+- Bubble makbuzlarda bazi genel toplam satirlarini zorunlu olarak `0` gonderiyor.
+- Bu satirlar sadece sifir olduklarinda PDF'te render edilmemeli.
+- Sifir olmayan degerler ayni satir kontratiyla gorunmeye devam etmeli.
+
+Kod guncellemeleri:
+
+- `LabeledValueRow` modeline `hide_if_zero` alani eklendi.
+- `payment_totals` ve `total_rows` render akisi bu bayragi destekleyecek sekilde filtrelendi.
+- `0`, `0,00`, `0,00 TL`, `TRY`, `TL`, `₺` ve yuzde sembolu iceren sifir-benzeri degerler desteklendi.
+- Sadece ilgili satirda `"hide_if_zero": true` varsa gizleme uygulanir; varsayilan davranis degismedi.
+
+Ornek:
+
+```json
+{"label":"Kredi Karti","value":"0,00 TL","hide_if_zero":true}
+```
+
+Production deploy:
+
+- `README.md`, `examples/receipt-valid.json` ve `questpdf-service/Program.cs` dosyalari Hostinger VPS uzerindeki `/opt/hirdavat-print-engine` klasorune `rsync` ile senkronize edildi.
+- `docs/QUESTPDF_INTEGRATION_LOG.md` ilk deploy paketine dahil edilmedi; bu not sonradan lokal log'a eklendi.
+- `docker compose up -d --build questpdf-api caddy` ile QuestPDF API container'i yeniden build/start edildi.
+
+Production dogrulamalari:
+
+- `GET https://pdf-api.hirdavat.ai/health` -> `200`
+- `docker compose ps` -> `caddy` ve `questpdf-api` Up
+- Canli public endpoint uzerinden `examples/receipt-valid.json` ile `/render/order-slip-url` -> `200`, `ok: true`, `pdf_url` dondu.
+
 ## Acik Isler
 
-- Production Dockerfile ve Docker Compose eklenecek.
-- R2 upload ve presigned URL destegi eklenecek.
-- API key dogrulamasi eklenecek.
-- CORS production domainleriyle sinirlanacak.
-- Cloudflare Tunnel production hostname'e baglanacak.
-- Bubble API Connector production URL ve `X-Api-Key` ile guncellenecek.
+- Bubble API Connector'da rotate edilen `X-Api-Key` yeni degerle guncellenecek.
+- R2 upload ve presigned URL destegi ileride yeniden degerlendirilecek.

@@ -81,6 +81,8 @@ Validation rules:
 
 Bubble or any caller should send formatted visible strings for money and totals. The service validates and renders; it does not calculate KDV, discount, withholding, or grand totals.
 
+Rows in `total_rows` and `payment_totals` may include `"hide_if_zero": true`. When set, values such as `"0"`, `"0,00"`, `"0,00 TL"`, or `"₺0.00"` are omitted from the rendered PDF.
+
 ## Examples
 
 ```bash

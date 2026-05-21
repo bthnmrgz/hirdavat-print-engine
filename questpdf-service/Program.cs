@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using QuestPDF.Fluent;
@@ -424,7 +425,7 @@ sealed class PrintDocumentPdfDocument : IDocument
             column.Item().Element(ComposeQuoteItemsTable);
 
             var hasDetails = _payload.DetailFields is { Count: > 0 };
-            var hasTotals = _payload.TotalRows is { Count: > 0 };
+            var hasTotals = HasVisibleLabeledRows(_payload.TotalRows);
 
             if (hasDetails || hasTotals)
             {
@@ -517,7 +518,7 @@ sealed class PrintDocumentPdfDocument : IDocument
             column.Spacing(Mm(6));
             column.Item().Element(ComposePaymentsTable);
 
-            if (_payload.PaymentTotals is { Count: > 0 })
+            if (HasVisibleLabeledRows(_payload.PaymentTotals))
                 column.Item().AlignRight().Width(Mm(78)).Element(element => ComposeLabeledRows(element, _payload.PaymentTotals));
         });
     }
@@ -616,14 +617,19 @@ sealed class PrintDocumentPdfDocument : IDocument
 
     private void ComposeTotalRows(IContainer container)
     {
-        if (_payload.TotalRows is not { Count: > 0 })
+        if (!HasVisibleLabeledRows(_payload.TotalRows))
             return;
 
         ComposeLabeledRows(container, _payload.TotalRows);
     }
 
-    private void ComposeLabeledRows(IContainer container, IReadOnlyList<LabeledValueRow> rows)
+    private void ComposeLabeledRows(IContainer container, IReadOnlyList<LabeledValueRow>? rows)
     {
+        var visibleRows = VisibleLabeledRows(rows);
+
+        if (visibleRows.Count == 0)
+            return;
+
         container.Table(table =>
         {
             table.ColumnsDefinition(columns =>
@@ -632,7 +638,7 @@ sealed class PrintDocumentPdfDocument : IDocument
                 columns.ConstantColumn(Mm(30));
             });
 
-            foreach (var row in rows)
+            foreach (var row in visibleRows)
             {
                 Func<IContainer, IContainer> chrome = row.Emphasis ? TotalEmphasisChrome : TotalChrome;
                 var labelCell = table.Cell().Element(chrome);
@@ -648,6 +654,42 @@ sealed class PrintDocumentPdfDocument : IDocument
                 }
             }
         });
+    }
+
+    private static bool HasVisibleLabeledRows(IReadOnlyList<LabeledValueRow>? rows)
+    {
+        return VisibleLabeledRows(rows).Count > 0;
+    }
+
+    private static List<LabeledValueRow> VisibleLabeledRows(IReadOnlyList<LabeledValueRow>? rows)
+    {
+        if (rows is null || rows.Count == 0)
+            return [];
+
+        return rows.Where(row => !row.HideIfZero || !IsZeroLike(row.Value)).ToList();
+    }
+
+    private static bool IsZeroLike(string? value)
+    {
+        var text = Text(value)
+            .Replace("TL", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("TRY", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("₺", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("%", "", StringComparison.OrdinalIgnoreCase)
+            .Trim();
+
+        if (text.Length == 0)
+            return false;
+
+        var normalized = text.Replace(" ", "");
+
+        if (normalized.Contains(','))
+            normalized = normalized.Replace(".", "").Replace(',', '.');
+
+        if (decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out var number))
+            return number == 0;
+
+        return false;
     }
 
     private void ComposeSignature(IContainer container)
@@ -1080,6 +1122,9 @@ sealed class LabeledValueRow
 
     [JsonPropertyName("emphasis")]
     public bool Emphasis { get; init; }
+
+    [JsonPropertyName("hide_if_zero")]
+    public bool HideIfZero { get; init; }
 }
 
 sealed class SignatureBlock
