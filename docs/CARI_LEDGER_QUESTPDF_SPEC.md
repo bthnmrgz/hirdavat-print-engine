@@ -264,18 +264,16 @@ The PDF should include:
 
 - Title: `Cari Ekstre`
 - Cari name, bold and prominent.
-- Cari id, code, short title, type when present.
-- Report date / generated date when present.
-- Filter summary when present.
-- Current view info:
-  - `movement_mode`
-  - movement count
-  - remaining count for paged views
-- Metrics section.
+- Cari code, short title, type when present.
+- Current date and `Cari Ekstresi` in the top-right meta area.
 - Movement table using the incoming `columns` and `rows`.
-- Findings section when present.
+- Metrics section below the movement table, similar to receipt totals.
 
-Rows should use the incoming formatted strings as-is. The service must not calculate balances, totals, due status, or money formatting.
+Rows should use the incoming formatted strings as-is except cari ledger money-like values, which should render with 2 decimal digits. The service must not calculate balances, totals, or due status.
+
+Technical fields such as `cari.id`, `report_date`, `generated_at`, `filters.summary`, `scope`, and `view` must not be printed as a separate detail section.
+
+`findings` must not be printed in the PDF.
 
 ### 7. Table behavior
 
@@ -286,6 +284,8 @@ Use `columns` as the source of truth:
 - `align: "right"` means right-aligned cell.
 - `align: "center"` means centered cell.
 - Missing values render as empty string.
+- Money-like columns such as debt, credit, balance, amount, and total render with 2 decimal digits.
+- The balance column may receive extra relative width to avoid wrapping long values.
 
 If there are no rows, render one full-width row:
 

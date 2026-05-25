@@ -28,8 +28,11 @@
     "summary": "Son hareket sayfasi / Baslangic: 2026-05-01 / Borclar"
   },
   "metrics": [
-    { "label": "Cari Bakiye TL", "value": "12.345 TL" },
-    { "label": "Sayfa borc", "value": "5.000 TL" }
+    { "label": "Cari Bakiye TL", "value": "1.845.348,4 TL" },
+    { "label": "Sayfa borc", "value": "963.788,052 TL" },
+    { "label": "Sayfa alacak", "value": "325.000 TL" },
+    { "label": "Sayfa neti", "value": "638.788,052 TL" },
+    { "label": "Kalan", "value": "0" }
   ],
   "findings": [
     "Hizli gorunum; metrikler sadece yuklenen cari hareket sayfasi icindir."
@@ -50,9 +53,9 @@
       "date": "25.05.2026",
       "documentNo": "F-123",
       "documentType": "Satis Faturasi",
-      "debt": "1.000 TL",
+      "debt": "963.788,052 TL",
       "credit": "0 TL",
-      "balance": "1.000 TL",
+      "balance": "1.561.322,702 TL",
       "dueDate": "30.05.2026",
       "dueStatus": "5 gun var",
       "detail": "-"

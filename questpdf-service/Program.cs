@@ -283,7 +283,7 @@ sealed class PrintDocumentPdfDocument : IDocument
 
     private string DefaultTitle => DocumentType switch
     {
-        "cari_ledger" => "Cari Ekstre",
+        "cari_ledger" => "Cari Ekstresi",
         "quote" => "Teklif",
         "receipt" => "Makbuz",
         _ => "Sipariş Fişi"
@@ -407,6 +407,14 @@ sealed class PrintDocumentPdfDocument : IDocument
             }
 
             column.Spacing(Mm(_style.HeaderLineGapMm));
+
+            if (DocumentType == "cari_ledger")
+            {
+                AddText(CurrentCariLedgerDate());
+                column.Item().Text(DefaultTitle);
+                return;
+            }
+
             AddText(_payload.Date);
             column.Item().Text("#" + Text(_payload.DocumentNo));
             column.Item().Text(FirstText(_payload.Title, DefaultTitle));
@@ -438,14 +446,10 @@ sealed class PrintDocumentPdfDocument : IDocument
         {
             column.Spacing(Mm(6));
             column.Item().Element(ComposeCariLedgerSummary);
-
-            if (_payload.Metrics is { Count: > 0 })
-                column.Item().Element(ComposeCariLedgerMetrics);
-
             column.Item().Element(ComposeCariLedgerTable);
 
-            if (_payload.Findings is { Count: > 0 })
-                column.Item().Element(ComposeCariLedgerFindings);
+            if (_payload.Metrics is { Count: > 0 })
+                column.Item().AlignRight().Width(Mm(88)).Element(ComposeCariLedgerMetrics);
         });
     }
 
@@ -459,36 +463,11 @@ sealed class PrintDocumentPdfDocument : IDocument
                     column.Item().Text(Text(value));
             }
 
-            void AddLabelValue(string label, string? value)
-            {
-                if (string.IsNullOrWhiteSpace(value))
-                    return;
-
-                column.Item().Row(row =>
-                {
-                    row.ConstantItem(Mm(28)).Text(label).SemiBold();
-                    row.RelativeItem().Text(Text(value));
-                });
-            }
-
             column.Spacing(Mm(2.2));
             column.Item().Text(FirstText(_payload.Title, DefaultTitle)).FontSize((float)(_style.BodyFontPx + 3)).Bold();
             column.Item().Text(Text(_payload.Cari?.Name)).FontSize((float)(_style.BodyFontPx + 1.4)).Bold();
 
             AddText(JoinNonEmpty(" / ", _payload.Cari?.Code, _payload.Cari?.ShortTitle, _payload.Cari?.Type));
-            AddLabelValue("Cari ID:", _payload.Cari?.Id);
-            AddLabelValue("Rapor:", FirstText(_payload.ReportDate, _payload.Date));
-            AddLabelValue("Uretim:", _payload.GeneratedAt);
-            AddLabelValue("Filtre:", _payload.Filters?.Summary);
-            AddLabelValue("Kapsam:", _payload.Scope);
-
-            var viewText = JoinNonEmpty(" / ",
-                LabelText("Mod", _payload.View?.MovementMode),
-                LabelText("Hareket", _payload.View?.MovementCount),
-                LabelText("Sayfa", _payload.View?.PageCount),
-                PagedRemainingText());
-
-            AddLabelValue("Gorunum:", viewText);
         });
     }
 
@@ -512,7 +491,7 @@ sealed class PrintDocumentPdfDocument : IDocument
             foreach (var metric in metrics)
             {
                 table.Cell().Element(TotalChrome).Text(Text(metric.Label)).SemiBold();
-                table.Cell().Element(TotalChrome).AlignRight().Text(Text(metric.Value));
+                table.Cell().Element(TotalChrome).AlignRight().Text(CariLedgerMetricValue(metric));
             }
         });
     }
@@ -528,7 +507,7 @@ sealed class PrintDocumentPdfDocument : IDocument
             table.ColumnsDefinition(definition =>
             {
                 foreach (var column in columns)
-                    definition.RelativeColumn((float)Clamp(column.Width, 1, 0.25, 100));
+                    definition.RelativeColumn((float)CariLedgerColumnWidth(column));
             });
 
             table.Header(header =>
@@ -549,7 +528,7 @@ sealed class PrintDocumentPdfDocument : IDocument
                 {
                     foreach (var column in columns)
                     {
-                        var text = row.Values.TryGetValue(Text(column.Key), out var value) ? CellText(value) : "";
+                        var text = row.Values.TryGetValue(Text(column.Key), out var value) ? CariLedgerCellText(value, column) : "";
                         var cell = table.Cell().Element(CellChrome);
 
                         cell = Text(column.Align).ToLowerInvariant() switch
@@ -574,19 +553,23 @@ sealed class PrintDocumentPdfDocument : IDocument
         });
     }
 
-    private void ComposeCariLedgerFindings(IContainer container)
+    private double CariLedgerColumnWidth(CariLedgerColumn column)
     {
-        container.Column(column =>
-        {
-            column.Spacing(Mm(1.6));
-            column.Item().Text("Notlar").SemiBold();
+        var width = Clamp(column.Width, 1, 0.25, 100);
 
-            foreach (var finding in _payload.Findings ?? [])
-            {
-                if (!string.IsNullOrWhiteSpace(finding))
-                    column.Item().Text(Text(finding));
-            }
-        });
+        return Text(column.Key).Equals("balance", StringComparison.OrdinalIgnoreCase)
+            ? width * 1.35
+            : width;
+    }
+
+    private string CariLedgerCellText(JsonElement value, CariLedgerColumn column)
+    {
+        var text = CellText(value);
+
+        if (IsCariLedgerMoneyColumn(column))
+            return FormatCariLedgerMoney(text);
+
+        return text;
     }
 
     private void ComposeItemsTable(IContainer container)
@@ -1147,22 +1130,93 @@ sealed class PrintDocumentPdfDocument : IDocument
         return string.Join(separator, values.Select(Text).Where(value => !string.IsNullOrWhiteSpace(value)));
     }
 
-    private static string LabelText(string label, string? value)
+    private static bool IsCariLedgerMoneyColumn(CariLedgerColumn column)
     {
-        return string.IsNullOrWhiteSpace(value) ? "" : label + ": " + Text(value);
+        var key = Text(column.Key).ToLowerInvariant();
+        var label = Text(column.Label).ToLowerInvariant();
+
+        return key is "debt" or "credit" or "balance" or "amount" or "total"
+            || label.Contains("borc", StringComparison.Ordinal)
+            || label.Contains("borç", StringComparison.Ordinal)
+            || label.Contains("alacak", StringComparison.Ordinal)
+            || label.Contains("bakiye", StringComparison.Ordinal)
+            || label.Contains("tutar", StringComparison.Ordinal);
     }
 
-    private static string LabelText(string label, int? value)
+    private static string CariLedgerMetricValue(LabeledValueRow metric)
     {
-        return value is null ? "" : label + ": " + value.Value.ToString(CultureInfo.InvariantCulture);
+        var label = Text(metric.Label).ToLowerInvariant();
+        var value = Text(metric.Value);
+
+        if (value.Contains("TL", StringComparison.OrdinalIgnoreCase)
+            || label.Contains("bakiye", StringComparison.Ordinal)
+            || label.Contains("borc", StringComparison.Ordinal)
+            || label.Contains("borç", StringComparison.Ordinal)
+            || label.Contains("alacak", StringComparison.Ordinal)
+            || label.Contains("net", StringComparison.Ordinal))
+        {
+            return FormatCariLedgerMoney(value);
+        }
+
+        return value;
     }
 
-    private string PagedRemainingText()
+    private static string FormatCariLedgerMoney(string? value)
     {
-        if (!string.Equals(Text(_payload.View?.MovementMode), "paged", StringComparison.OrdinalIgnoreCase))
+        var text = Text(value);
+
+        if (text.Length == 0)
             return "";
 
-        return LabelText("Kalan", _payload.View?.PageRemaining);
+        var hasTl = text.Contains("TL", StringComparison.OrdinalIgnoreCase);
+        var numericText = text
+            .Replace("TL", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("TRY", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("₺", "", StringComparison.OrdinalIgnoreCase)
+            .Trim();
+
+        if (!TryParseFlexibleDecimal(numericText, out var number))
+            return text;
+
+        var formatted = number.ToString("#,##0.00", new CultureInfo("tr-TR"));
+
+        return hasTl ? formatted + " TL" : formatted;
+    }
+
+    private static bool TryParseFlexibleDecimal(string value, out decimal number)
+    {
+        number = 0;
+        var text = Text(value);
+
+        if (text.Length == 0)
+            return false;
+
+        var commaIndex = text.LastIndexOf(',');
+        var dotIndex = text.LastIndexOf('.');
+
+        if (commaIndex >= 0)
+        {
+            text = text.Replace(".", "").Replace(',', '.');
+        }
+        else if (dotIndex >= 0 && text.Length - dotIndex - 1 == 3)
+        {
+            text = text.Replace(".", "");
+        }
+
+        return decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out number);
+    }
+
+    private string CurrentCariLedgerDate()
+    {
+        var text = FirstText(_payload.Date, _payload.ReportDate, _payload.GeneratedAt);
+
+        if (DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date))
+            return date.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
+
+        if (!string.IsNullOrWhiteSpace(text))
+            return text;
+
+        return DateTimeOffset.Now.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
     }
 }
 

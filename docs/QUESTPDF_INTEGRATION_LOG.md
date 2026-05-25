@@ -320,3 +320,13 @@ Planlanan kontrat:
 - `company.name`, `items`, `payments` ve `table` cari ekstre icin zorunlu degil.
 - `rows` bos veya eksik oldugunda PDF tek satirlik `Cari hareketi yok.` bos durumunu render eder.
 - Para, bakiye, vade ve durum degerleri hesaplanmaz; Worker'in gonderdigi string'ler aynen kullanilir.
+
+## 2026-05-25 Cari Ekstre Gorsel Duzenleme
+
+Istek:
+
+- Cari ekstre PDF'te teknik detay section'i ve `Notlar` bolumu gosterilmeyecek.
+- Ust sag meta alani belge no yerine guncel tarih ve `Cari Ekstresi` gosterecek.
+- Para benzeri cari ekstre degerleri 2 ondalik hane ile render edilecek.
+- Metrikler hareket tablosunun altinda, makbuz toplam satirlari benzeri dar bir toplam alani olarak gosterilecek.
+- Bakiye kolonu uzun TL degerlerinin satir kirma riskini azaltmak icin daha genis render edilecek.
