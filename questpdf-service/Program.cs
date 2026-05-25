@@ -318,6 +318,16 @@ sealed class PrintDocumentPdfDocument : IDocument
 
     private void ComposeHeader(IContainer container)
     {
+        if (DocumentType == "cari_ledger")
+        {
+            container.Row(row =>
+            {
+                row.RelativeItem().Element(ComposeCariLedgerSummary);
+                row.ConstantItem(Mm(_style.HeaderMetaWidthMm)).AlignRight().Element(ComposeMeta);
+            });
+            return;
+        }
+
         container.Row(row =>
         {
             row.RelativeItem(_style.CompanyColumnWeight).Element(ComposeCompany);
@@ -445,7 +455,6 @@ sealed class PrintDocumentPdfDocument : IDocument
         container.Column(column =>
         {
             column.Spacing(Mm(6));
-            column.Item().Element(ComposeCariLedgerSummary);
             column.Item().Element(ComposeCariLedgerTable);
 
             if (_payload.Metrics is { Count: > 0 })

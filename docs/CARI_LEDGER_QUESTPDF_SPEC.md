@@ -266,6 +266,7 @@ The PDF should include:
 - Cari name, bold and prominent.
 - Cari code, short title, type when present.
 - Current date and `Cari Ekstresi` in the top-right meta area.
+- The left cari summary and top-right meta area start on the same vertical line.
 - Movement table using the incoming `columns` and `rows`.
 - Metrics section below the movement table, similar to receipt totals.
 

@@ -330,3 +330,4 @@ Istek:
 - Para benzeri cari ekstre degerleri 2 ondalik hane ile render edilecek.
 - Metrikler hareket tablosunun altinda, makbuz toplam satirlari benzeri dar bir toplam alani olarak gosterilecek.
 - Bakiye kolonu uzun TL degerlerinin satir kirma riskini azaltmak icin daha genis render edilecek.
+- Sol cari ozeti ve ust sag tarih/meta bilgisi ayni dikey hizada baslayacak.
