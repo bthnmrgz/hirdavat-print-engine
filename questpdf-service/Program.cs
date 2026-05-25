@@ -281,6 +281,10 @@ sealed class PrintDocumentPdfDocument : IDocument
 
     private bool HasCustomer => HasPartyContent(_payload.Customer);
 
+    private double HeaderBodyGapMm => DocumentType == "cari_ledger"
+        ? 8
+        : _style.HeaderGapMm;
+
     private string DefaultTitle => DocumentType switch
     {
         "cari_ledger" => "Cari Ekstresi",
@@ -302,7 +306,7 @@ sealed class PrintDocumentPdfDocument : IDocument
             page.Content()
                 .Column(column =>
                 {
-                    column.Spacing(Mm(_style.HeaderGapMm));
+                    column.Spacing(Mm(HeaderBodyGapMm));
                     column.Item().Element(ComposeHeader);
                     column.Item().Element(ComposeBody);
 
