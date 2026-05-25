@@ -13,6 +13,7 @@ The old Bubble plugin/browser-print layer has been removed. This repository now 
 - `examples/order-slip-customerless.json` - payload without a customer block.
 - `examples/quote-valid.json` - quote payload.
 - `examples/receipt-valid.json` - receipt payload.
+- `examples/cari-ledger-valid.json` - cari ledger payload.
 - `docker-compose.yml` - local/production compose entrypoint.
 - `deploy/Caddyfile` - Caddy reverse proxy config.
 - `launch/` - local macOS launchd helpers.
@@ -56,6 +57,7 @@ Endpoint names stay backwards-compatible, but the request body selects the layou
 - `quote` - teklif layout.
 - `receipt` - tahsilat/tediyat makbuzu layout.
 - `order_slip` - sipariş fişi layout.
+- `cari_ledger` - cari ekstre layout.
 
 Common fields:
 
@@ -73,10 +75,11 @@ Common fields:
 
 Validation rules:
 
-- `document_type` must be `quote`, `receipt`, or `order_slip`.
-- `company.name` is required.
+- `document_type` must be `quote`, `receipt`, `order_slip`, or `cari_ledger`.
+- `company.name` is required for `quote`, `receipt`, and `order_slip`.
 - `quote` and `order_slip` require `items` or `table`.
 - `receipt` requires `payments` or `table`.
+- `cari_ledger` requires `cari.name` and root-level `columns`; `rows` may be empty.
 - `customer` is optional. If omitted, null, or empty, the customer header block is hidden.
 
 Bubble or any caller should send formatted visible strings for money and totals. The service validates and renders; it does not calculate KDV, discount, withholding, or grand totals.
@@ -100,6 +103,11 @@ curl -X POST http://localhost:5159/render/order-slip-url \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: local-dev-key" \
   --data-binary @examples/order-slip-customerless.json
+
+curl -X POST http://localhost:5159/render/order-slip-url \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/cari-ledger-valid.json
 ```
 
 ## Build

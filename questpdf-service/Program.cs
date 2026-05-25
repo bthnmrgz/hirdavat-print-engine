@@ -86,7 +86,7 @@ app.MapPost("/render/order-slip-url", async Task<IResult> (PrintDocumentPayload 
 
     var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
     var pdf = new PrintDocumentPdfDocument(payload, logoBytes).GeneratePdf();
-    var fileName = UniquePdfFileName(payload.DocumentNo, "order-slip");
+    var fileName = UniquePdfFileName(payload.DocumentNo, UrlFileNameFallback(payload));
     var filePath = Path.Combine(generatedPdfDirectory, fileName);
 
     CleanupGeneratedPdfs(generatedPdfDirectory, pdfRetention, app.Logger);
@@ -167,7 +167,24 @@ static string Validate(PrintDocumentPayload payload)
     var documentType = Text(payload.DocumentType);
 
     if (!IsAllowedDocumentType(documentType))
-        return "document_type 'quote', 'receipt' veya 'order_slip' olmalidir.";
+        return "document_type 'quote', 'receipt', 'order_slip' veya 'cari_ledger' olmalidir.";
+
+    if (documentType == "cari_ledger")
+    {
+        if (string.IsNullOrWhiteSpace(payload.Cari?.Name))
+            return "cari.name zorunludur.";
+
+        if (payload.Columns is not { Count: > 0 })
+            return "columns alani en az bir kolon icermelidir.";
+
+        foreach (var column in payload.Columns)
+        {
+            if (string.IsNullOrWhiteSpace(column.Key))
+                return "columns icindeki key alanlari zorunludur.";
+        }
+
+        return "";
+    }
 
     if (payload.Table is not null)
     {
@@ -199,7 +216,7 @@ static string Validate(PrintDocumentPayload payload)
 
 static bool IsAllowedDocumentType(string documentType)
 {
-    return documentType is "quote" or "receipt" or "order_slip";
+    return documentType is "quote" or "receipt" or "order_slip" or "cari_ledger";
 }
 
 static async Task<byte[]?> TryFetchLogoAsync(string? logoUrl, IHttpClientFactory httpClientFactory)
@@ -225,6 +242,11 @@ static string UniquePdfFileName(string? documentNo, string fallback)
 {
     var baseName = SafeFileName(documentNo, fallback);
     return baseName + "-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "-" + Guid.NewGuid().ToString("N")[..8] + ".pdf";
+}
+
+static string UrlFileNameFallback(PrintDocumentPayload payload)
+{
+    return Text(payload.DocumentType) == "cari_ledger" ? "cari-ledger" : "order-slip";
 }
 
 static string PublicUrl(HttpContext httpContext, string path)
@@ -261,6 +283,7 @@ sealed class PrintDocumentPdfDocument : IDocument
 
     private string DefaultTitle => DocumentType switch
     {
+        "cari_ledger" => "Cari Ekstre",
         "quote" => "Teklif",
         "receipt" => "Makbuz",
         _ => "Sipariş Fişi"
@@ -400,10 +423,170 @@ sealed class PrintDocumentPdfDocument : IDocument
             case "receipt":
                 ComposeReceipt(container);
                 break;
+            case "cari_ledger":
+                ComposeCariLedger(container);
+                break;
             default:
                 ComposeItemsTable(container);
                 break;
         }
+    }
+
+    private void ComposeCariLedger(IContainer container)
+    {
+        container.Column(column =>
+        {
+            column.Spacing(Mm(6));
+            column.Item().Element(ComposeCariLedgerSummary);
+
+            if (_payload.Metrics is { Count: > 0 })
+                column.Item().Element(ComposeCariLedgerMetrics);
+
+            column.Item().Element(ComposeCariLedgerTable);
+
+            if (_payload.Findings is { Count: > 0 })
+                column.Item().Element(ComposeCariLedgerFindings);
+        });
+    }
+
+    private void ComposeCariLedgerSummary(IContainer container)
+    {
+        container.Column(column =>
+        {
+            void AddText(string? value)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    column.Item().Text(Text(value));
+            }
+
+            void AddLabelValue(string label, string? value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                    return;
+
+                column.Item().Row(row =>
+                {
+                    row.ConstantItem(Mm(28)).Text(label).SemiBold();
+                    row.RelativeItem().Text(Text(value));
+                });
+            }
+
+            column.Spacing(Mm(2.2));
+            column.Item().Text(FirstText(_payload.Title, DefaultTitle)).FontSize((float)(_style.BodyFontPx + 3)).Bold();
+            column.Item().Text(Text(_payload.Cari?.Name)).FontSize((float)(_style.BodyFontPx + 1.4)).Bold();
+
+            AddText(JoinNonEmpty(" / ", _payload.Cari?.Code, _payload.Cari?.ShortTitle, _payload.Cari?.Type));
+            AddLabelValue("Cari ID:", _payload.Cari?.Id);
+            AddLabelValue("Rapor:", FirstText(_payload.ReportDate, _payload.Date));
+            AddLabelValue("Uretim:", _payload.GeneratedAt);
+            AddLabelValue("Filtre:", _payload.Filters?.Summary);
+            AddLabelValue("Kapsam:", _payload.Scope);
+
+            var viewText = JoinNonEmpty(" / ",
+                LabelText("Mod", _payload.View?.MovementMode),
+                LabelText("Hareket", _payload.View?.MovementCount),
+                LabelText("Sayfa", _payload.View?.PageCount),
+                PagedRemainingText());
+
+            AddLabelValue("Gorunum:", viewText);
+        });
+    }
+
+    private void ComposeCariLedgerMetrics(IContainer container)
+    {
+        var metrics = _payload.Metrics?
+            .Where(row => !string.IsNullOrWhiteSpace(row.Label) || !string.IsNullOrWhiteSpace(row.Value))
+            .ToList() ?? [];
+
+        if (metrics.Count == 0)
+            return;
+
+        container.Table(table =>
+        {
+            table.ColumnsDefinition(columns =>
+            {
+                columns.RelativeColumn();
+                columns.ConstantColumn(Mm(34));
+            });
+
+            foreach (var metric in metrics)
+            {
+                table.Cell().Element(TotalChrome).Text(Text(metric.Label)).SemiBold();
+                table.Cell().Element(TotalChrome).AlignRight().Text(Text(metric.Value));
+            }
+        });
+    }
+
+    private void ComposeCariLedgerTable(IContainer container)
+    {
+        var columns = _payload.Columns?
+            .Where(column => !string.IsNullOrWhiteSpace(column.Key))
+            .ToList() ?? [];
+
+        container.Table(table =>
+        {
+            table.ColumnsDefinition(definition =>
+            {
+                foreach (var column in columns)
+                    definition.RelativeColumn((float)Clamp(column.Width, 1, 0.25, 100));
+            });
+
+            table.Header(header =>
+            {
+                foreach (var column in columns)
+                {
+                    header.Cell()
+                        .Element(HeaderChrome)
+                        .AlignCenter()
+                        .Text(FirstText(column.Label, column.Key))
+                        .FontSize((float)_style.TableFontPx);
+                }
+            });
+
+            if (_payload.Rows is { Count: > 0 })
+            {
+                foreach (var row in _payload.Rows)
+                {
+                    foreach (var column in columns)
+                    {
+                        var text = row.Values.TryGetValue(Text(column.Key), out var value) ? CellText(value) : "";
+                        var cell = table.Cell().Element(CellChrome);
+
+                        cell = Text(column.Align).ToLowerInvariant() switch
+                        {
+                            "center" or "centre" => cell.AlignCenter(),
+                            "right" => cell.AlignRight(),
+                            _ => cell
+                        };
+
+                        cell.Text(text).FontSize((float)_style.TableFontPx);
+                    }
+                }
+            }
+            else
+            {
+                table.Cell()
+                    .ColumnSpan((uint)columns.Count)
+                    .Element(CellChrome)
+                    .AlignCenter()
+                    .Text("Cari hareketi yok.");
+            }
+        });
+    }
+
+    private void ComposeCariLedgerFindings(IContainer container)
+    {
+        container.Column(column =>
+        {
+            column.Spacing(Mm(1.6));
+            column.Item().Text("Notlar").SemiBold();
+
+            foreach (var finding in _payload.Findings ?? [])
+            {
+                if (!string.IsNullOrWhiteSpace(finding))
+                    column.Item().Text(Text(finding));
+            }
+        });
     }
 
     private void ComposeItemsTable(IContainer container)
@@ -963,6 +1146,24 @@ sealed class PrintDocumentPdfDocument : IDocument
     {
         return string.Join(separator, values.Select(Text).Where(value => !string.IsNullOrWhiteSpace(value)));
     }
+
+    private static string LabelText(string label, string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "" : label + ": " + Text(value);
+    }
+
+    private static string LabelText(string label, int? value)
+    {
+        return value is null ? "" : label + ": " + value.Value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private string PagedRemainingText()
+    {
+        if (!string.Equals(Text(_payload.View?.MovementMode), "paged", StringComparison.OrdinalIgnoreCase))
+            return "";
+
+        return LabelText("Kalan", _payload.View?.PageRemaining);
+    }
 }
 
 static class PdfHelpers
@@ -1110,6 +1311,108 @@ sealed class PrintDocumentPayload
 
     [JsonPropertyName("payment_totals")]
     public List<LabeledValueRow>? PaymentTotals { get; init; }
+
+    [JsonPropertyName("generated_at")]
+    public string? GeneratedAt { get; init; }
+
+    [JsonPropertyName("report_date")]
+    public string? ReportDate { get; init; }
+
+    [JsonPropertyName("scope")]
+    public string? Scope { get; init; }
+
+    [JsonPropertyName("cari")]
+    public CariLedgerParty? Cari { get; init; }
+
+    [JsonPropertyName("view")]
+    public CariLedgerView? View { get; init; }
+
+    [JsonPropertyName("filters")]
+    public CariLedgerFilters? Filters { get; init; }
+
+    [JsonPropertyName("metrics")]
+    public List<LabeledValueRow>? Metrics { get; init; }
+
+    [JsonPropertyName("findings")]
+    public List<string>? Findings { get; init; }
+
+    [JsonPropertyName("columns")]
+    public List<CariLedgerColumn>? Columns { get; init; }
+
+    [JsonPropertyName("rows")]
+    public List<DocumentTableRow>? Rows { get; init; }
+}
+
+sealed class CariLedgerParty
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; init; }
+
+    [JsonPropertyName("code")]
+    public string? Code { get; init; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("short_title")]
+    public string? ShortTitle { get; init; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
+}
+
+sealed class CariLedgerView
+{
+    [JsonPropertyName("movement_mode")]
+    public string? MovementMode { get; init; }
+
+    [JsonPropertyName("movement_limit")]
+    public int? MovementLimit { get; init; }
+
+    [JsonPropertyName("movement_cursor")]
+    public int? MovementCursor { get; init; }
+
+    [JsonPropertyName("density")]
+    public string? Density { get; init; }
+
+    [JsonPropertyName("movement_count")]
+    public int? MovementCount { get; init; }
+
+    [JsonPropertyName("page_count")]
+    public int? PageCount { get; init; }
+
+    [JsonPropertyName("page_remaining")]
+    public int? PageRemaining { get; init; }
+}
+
+sealed class CariLedgerFilters
+{
+    [JsonPropertyName("date_from")]
+    public string? DateFrom { get; init; }
+
+    [JsonPropertyName("date_to")]
+    public string? DateTo { get; init; }
+
+    [JsonPropertyName("entry_kind")]
+    public string? EntryKind { get; init; }
+
+    [JsonPropertyName("summary")]
+    public string? Summary { get; init; }
+}
+
+sealed class CariLedgerColumn
+{
+    [JsonPropertyName("key")]
+    public string? Key { get; init; }
+
+    [JsonPropertyName("label")]
+    public string? Label { get; init; }
+
+    [JsonPropertyName("align")]
+    public string? Align { get; init; }
+
+    [JsonPropertyName("width")]
+    public double? Width { get; init; }
 }
 
 sealed class LabeledValueRow

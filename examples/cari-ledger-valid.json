@@ -1,0 +1,61 @@
+{
+  "document_type": "cari_ledger",
+  "document_no": "cari-ledger-abc-001",
+  "generated_at": "2026-05-25T12:00:00.000Z",
+  "report_date": "2026-05-25T12:00:00.000Z",
+  "scope": "current_view",
+  "title": "Cari Ekstre",
+  "cari": {
+    "id": "abc-001",
+    "code": "ABC-001",
+    "name": "ABC Hirdavat",
+    "short_title": "ABC",
+    "type": "Musteri"
+  },
+  "view": {
+    "movement_mode": "paged",
+    "movement_limit": 50,
+    "movement_cursor": 0,
+    "density": "compact",
+    "movement_count": 50,
+    "page_count": 50,
+    "page_remaining": 120
+  },
+  "filters": {
+    "date_from": "2026-05-01",
+    "date_to": "2026-05-31",
+    "entry_kind": "debt",
+    "summary": "Son hareket sayfasi / Baslangic: 2026-05-01 / Borclar"
+  },
+  "metrics": [
+    { "label": "Cari Bakiye TL", "value": "12.345 TL" },
+    { "label": "Sayfa borc", "value": "5.000 TL" }
+  ],
+  "findings": [
+    "Hizli gorunum; metrikler sadece yuklenen cari hareket sayfasi icindir."
+  ],
+  "columns": [
+    { "key": "date", "label": "Tarih" },
+    { "key": "documentNo", "label": "Evrak No" },
+    { "key": "documentType", "label": "Evrak Tipi" },
+    { "key": "debt", "label": "Borc", "align": "right" },
+    { "key": "credit", "label": "Alacak", "align": "right" },
+    { "key": "balance", "label": "Bakiye", "align": "right" },
+    { "key": "dueDate", "label": "Vade" },
+    { "key": "dueStatus", "label": "Durum" },
+    { "key": "detail", "label": "Detay" }
+  ],
+  "rows": [
+    {
+      "date": "25.05.2026",
+      "documentNo": "F-123",
+      "documentType": "Satis Faturasi",
+      "debt": "1.000 TL",
+      "credit": "0 TL",
+      "balance": "1.000 TL",
+      "dueDate": "30.05.2026",
+      "dueStatus": "5 gun var",
+      "detail": "-"
+    }
+  ]
+}

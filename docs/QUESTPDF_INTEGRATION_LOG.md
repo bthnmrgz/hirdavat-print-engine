@@ -306,3 +306,17 @@ Production dogrulamalari:
 
 - Bubble API Connector'da rotate edilen `X-Api-Key` yeni degerle guncellenecek.
 - R2 upload ve presigned URL destegi ileride yeniden degerlendirilecek.
+
+## 2026-05-25 Cari Ekstre Dokuman Tipi
+
+Istek:
+
+- Analytics Worker, mevcut `/render/order-slip-url` endpoint'ine `document_type: "cari_ledger"` payload'i gonderecek.
+- `quote`, `receipt` ve `order_slip` davranislari degismeyecek.
+
+Planlanan kontrat:
+
+- `cari.name` ve root-level `columns[].key` zorunlu.
+- `company.name`, `items`, `payments` ve `table` cari ekstre icin zorunlu degil.
+- `rows` bos veya eksik oldugunda PDF tek satirlik `Cari hareketi yok.` bos durumunu render eder.
+- Para, bakiye, vade ve durum degerleri hesaplanmaz; Worker'in gonderdigi string'ler aynen kullanilir.
