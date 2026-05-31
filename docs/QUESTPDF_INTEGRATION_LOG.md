@@ -332,3 +332,34 @@ Istek:
 - Bakiye kolonu uzun TL degerlerinin satir kirma riskini azaltmak icin daha genis render edilecek.
 - Sol cari ozeti ve ust sag tarih/meta bilgisi ayni dikey hizada baslayacak.
 - Cari ekstreye ozel header ile hareket tablosu arasindaki bosluk dar tutulacak.
+
+## 2026-05-31 SVG Logo ve JSON Hata Donusu
+
+Istek:
+
+- Canli Bubble PDF cagrisi test surumunde calismasina ragmen live ortamda `about:blank` aciyor.
+- Hata body olarak gorunmedigi icin Bubble tarafinda sebep ayirt edilemiyor.
+
+Tespit:
+
+- Gonderilen `company.logo_url` degeri `.svg` uzantili.
+- QuestPDF `Image(byte[])` raster image bekliyor; SVG logo indirildiginde render asamasinda hata uretme riski var.
+- Canli public endpoint API key olmadan `401` ve bos body donduruyordu; Bubble bu durumda `pdf_url` bulamayinca `about:blank` acabilir.
+
+Kod guncellemeleri:
+
+- SVG logo URL'leri, `image/svg` content-type degerleri ve SVG byte icerikleri logo yokmus gibi atlanir.
+- `/render/order-slip-url` render hatalarinda artik `ok: false`, `error.code: "render_failed"` JSON govdesi dondurur.
+- API key eksik veya hataliyken bos `401` yerine `ok: false`, `error.code: "unauthorized"` JSON govdesi dondurur.
+
+Production deploy:
+
+- `questpdf-service/Program.cs`, `docs/QUESTPDF_SERVER_RUNBOOK.md` ve `docs/QUESTPDF_INTEGRATION_LOG.md` Hostinger VPS uzerindeki `/opt/hirdavat-print-engine` klasorune `rsync` ile senkronize edildi.
+- `docker compose up -d --build questpdf-api caddy` ile QuestPDF API container'i yeniden build/start edildi.
+
+Production dogrulamalari:
+
+- `GET https://pdf-api.hirdavat.ai/health` -> `200`
+- API key olmadan `/render/order-slip-url` -> `401`, `ok: false`, `error.code: "unauthorized"`
+- SVG logolu canli siparis payload'i (`ÖZG2026-702`) -> `200`, `ok: true`, `pdf_url`
+- Uretilen PDF URL'i -> `200`, `content-type: application/pdf`, `content-length: 37309`

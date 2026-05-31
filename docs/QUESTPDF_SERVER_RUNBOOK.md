@@ -190,7 +190,17 @@ Basarili response:
 }
 ```
 
-API key eksik veya yanlissa `401 Unauthorized` doner.
+API key eksik veya yanlissa `401` ve JSON hata govdesi doner:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "unauthorized",
+    "message": "X-Api-Key hatali veya eksik."
+  }
+}
+```
 
 ## Bubble Kullanimi
 

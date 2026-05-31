@@ -62,10 +62,20 @@ app.MapPost("/render/order-slip", async Task<IResult> (PrintDocumentPayload payl
     if (!string.IsNullOrWhiteSpace(error))
         return Results.BadRequest(error);
 
-    var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
-    var pdf = new PrintDocumentPdfDocument(payload, logoBytes).GeneratePdf();
-    var fileName = SafeFileName(payload.DocumentNo, "order-slip") + ".pdf";
+    byte[] pdf;
 
+    try
+    {
+        var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
+        pdf = new PrintDocumentPdfDocument(payload, logoBytes).GeneratePdf();
+    }
+    catch (Exception exception)
+    {
+        app.Logger.LogError(exception, "Failed to render PDF for {DocumentType} {DocumentNo}", payload.DocumentType, payload.DocumentNo);
+        return Results.Problem("PDF render edilemedi.", statusCode: StatusCodes.Status500InternalServerError);
+    }
+
+    var fileName = SafeFileName(payload.DocumentNo, "order-slip") + ".pdf";
     return Results.File(pdf, "application/pdf", fileName);
 });
 
@@ -84,8 +94,28 @@ app.MapPost("/render/order-slip-url", async Task<IResult> (PrintDocumentPayload 
             error
         });
 
-    var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
-    var pdf = new PrintDocumentPdfDocument(payload, logoBytes).GeneratePdf();
+    byte[] pdf;
+
+    try
+    {
+        var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
+        pdf = new PrintDocumentPdfDocument(payload, logoBytes).GeneratePdf();
+    }
+    catch (Exception exception)
+    {
+        app.Logger.LogError(exception, "Failed to render PDF for {DocumentType} {DocumentNo}", payload.DocumentType, payload.DocumentNo);
+        return Results.Json(new
+        {
+            ok = false,
+            error = new
+            {
+                code = "render_failed",
+                message = "PDF render edilemedi.",
+                detail = exception.Message
+            }
+        }, statusCode: StatusCodes.Status500InternalServerError);
+    }
+
     var fileName = UniquePdfFileName(payload.DocumentNo, UrlFileNameFallback(payload));
     var filePath = Path.Combine(generatedPdfDirectory, fileName);
 
@@ -114,7 +144,15 @@ static IResult? RequireApiKey(HttpContext httpContext, string? configuredApiKey)
     var requestApiKey = httpContext.Request.Headers["X-Api-Key"].FirstOrDefault();
 
     if (!string.Equals(requestApiKey, configuredApiKey, StringComparison.Ordinal))
-        return Results.Unauthorized();
+        return Results.Json(new
+        {
+            ok = false,
+            error = new
+            {
+                code = "unauthorized",
+                message = "X-Api-Key hatali veya eksik."
+            }
+        }, statusCode: StatusCodes.Status401Unauthorized);
 
     return null;
 }
@@ -227,15 +265,42 @@ static async Task<byte[]?> TryFetchLogoAsync(string? logoUrl, IHttpClientFactory
     if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
         return null;
 
+    if (LooksLikeSvgText(uri.AbsolutePath))
+        return null;
+
     try
     {
         var client = httpClientFactory.CreateClient("logo");
-        return await client.GetByteArrayAsync(uri);
+        using var response = await client.GetAsync(uri);
+
+        response.EnsureSuccessStatusCode();
+
+        var contentType = response.Content.Headers.ContentType?.MediaType;
+        if (LooksLikeSvgText(contentType))
+            return null;
+
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        return LooksLikeSvgBytes(bytes) ? null : bytes;
     }
     catch
     {
         return null;
     }
+}
+
+static bool LooksLikeSvgText(string? value)
+{
+    var text = Text(value).ToLowerInvariant();
+    return text.EndsWith(".svg", StringComparison.Ordinal) || text.Contains("image/svg", StringComparison.Ordinal);
+}
+
+static bool LooksLikeSvgBytes(byte[] bytes)
+{
+    var length = Math.Min(bytes.Length, 512);
+    var text = System.Text.Encoding.UTF8.GetString(bytes, 0, length).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+
+    return text.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
+        || text.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) && text.Contains("<svg", StringComparison.OrdinalIgnoreCase);
 }
 
 static string UniquePdfFileName(string? documentNo, string fallback)
