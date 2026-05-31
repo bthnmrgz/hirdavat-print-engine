@@ -2,6 +2,39 @@
 
 Bu dokuman, Printer v2 icinde QuestPDF entegrasyonu sirasinda alinan kararlarin ve yapilan denemelerin teknik kaydidir.
 
+## 2026-05-31 Mobil Static Host Hazirligi
+
+Istek:
+
+- Canli mobil React app `https://m.hirdavat.ai` altinda Hostinger VPS uzerindeki mevcut Caddy ile statik dosya olarak servis edilecek.
+- Mevcut PDF API akisi bozulmayacak; `pdf-api.hirdavat.ai` ayni `reverse_proxy questpdf-api:5159` hattinda kalacak.
+- QuestPDF secret/env degerleri degistirilmeyecek.
+
+Repo konfigurasyonu:
+
+- `docker-compose.yml` Caddy servisine `/opt/hirdavat-mobile:/srv/hirdavat-mobile:ro` read-only mount'u eklendi.
+- `deploy/Caddyfile` icinde mevcut `pdf-api.hirdavat.ai` block'u korundu.
+- `m.hirdavat.ai` icin host tarafinda `/opt/hirdavat-mobile/current`, Caddy container icinde `/srv/hirdavat-mobile/current` root'lu static `file_server` block'u eklendi.
+- Mobil Vite build sabit asset adlari urettigi icin `/assets/*` cache header'i `no-cache, must-revalidate` olarak belirlendi.
+- `frame-ancestors` CSP degeri Bubble hostlariyla sinirlandi: `https://hirdavat.ai` ve `https://kodsuzai.bubbleapps.io`.
+
+Dokuman guncellemeleri:
+
+- `docs/QUESTPDF_SERVER_RUNBOOK.md` mobil release/symlink yapisi, Caddy mount'u, deploy, rollback ve PDF regression kontrolleriyle genisletildi.
+- `docs/HOSTINGER_KVM4_DEPLOYMENT.md` Cloudflare Tunnel anlatiminin tarihsel ilk plan oldugunu, guncel production yolunun Namecheap A record + VPS + Caddy oldugunu belirtecek sekilde guncellendi.
+- `docs/QUESTPDF_HOSTING_PLAN.md` mevcut production runbook'un authoritative oldugunu ve eski Cloudflare Tunnel/R2 onerilerinin tarihsel plan oldugunu not eder.
+
+Server uygulama sonrasi zorunlu dogrulamalar:
+
+```text
+GET https://m.hirdavat.ai/ -> 200, /opt/hirdavat-mobile/current release'i varsa
+GET https://m.hirdavat.ai/assets/index.js -> 200, mobil release ilgili asset'i iceriyorsa
+GET https://pdf-api.hirdavat.ai/health -> 200
+Secretsiz POST https://pdf-api.hirdavat.ai/render/order-slip-url -> 401 JSON error
+```
+
+`/opt/hirdavat-mobile/current` henuz yoksa Caddy host'u hazir olur, ancak mobil dosyalar yuklenene kadar `m.hirdavat.ai` istekleri dosya bulunamadi cevabi verebilir.
+
 ## Baslangic Durumu
 
 Mevcut sistem baslangicta Bubble plugin icinde calisan HTML/browser-print tabanli bir yapiydi.

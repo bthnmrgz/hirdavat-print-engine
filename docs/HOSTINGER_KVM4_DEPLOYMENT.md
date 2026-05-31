@@ -1,5 +1,26 @@
 # Hostinger KVM4 Deployment
 
+## Current production note
+
+Bu dokuman ilk Hostinger/Cloudflare Tunnel planini tarihsel olarak saklar. Guncel production yolu Cloudflare Tunnel degil:
+
+```text
+Namecheap A record -> Hostinger VPS -> Caddy
+```
+
+Authoritative runbook:
+
+```text
+docs/QUESTPDF_SERVER_RUNBOOK.md
+```
+
+Mobil React canli host'u da ayni VPS/Caddy hattina eklenmistir:
+
+```text
+https://m.hirdavat.ai -> host:/opt/hirdavat-mobile/current
+                      -> caddy:/srv/hirdavat-mobile/current
+```
+
 Bu dokuman, QuestPDF API'yi ngrok yerine Hostinger KVM4 uzerinde Docker ve Cloudflare Tunnel ile yayinlamak icin uygulanacak production yoludur.
 
 ## 1. Hostinger VPS

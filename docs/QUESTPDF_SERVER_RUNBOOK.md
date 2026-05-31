@@ -4,7 +4,7 @@ Bu dokuman, Hirdavat QuestPDF API sunucusunun nasil yayinlandigini, Bubble taraf
 
 ## Canli Mimari
 
-Su an kullanilan production akisi:
+Su an kullanilan production PDF akisi:
 
 ```text
 Bubble API Connector
@@ -16,6 +16,17 @@ Bubble API Connector
   -> questpdf-api:5159
 ```
 
+Mobil React canli host'u ayni VPS uzerindeki Caddy tarafindan statik dosya olarak servis edilir:
+
+```text
+Bubble iframe
+  -> https://m.hirdavat.ai
+  -> Namecheap DNS A record
+  -> Hostinger VPS <vps-public-ip>
+  -> Caddy static file_server
+  -> /srv/hirdavat-mobile/current
+```
+
 VPS bilgileri:
 
 ```text
@@ -23,6 +34,7 @@ Provider: Hostinger VPS
 OS: Ubuntu 24.04.4 LTS
 Public IP: <vps-public-ip>
 App path: /opt/hirdavat-print-engine
+Mobile app path: /opt/hirdavat-mobile
 SSH user: root
 SSH key on Mac: ~/.ssh/<deploy-key>
 ```
@@ -31,7 +43,7 @@ SSH key on Mac: ~/.ssh/<deploy-key>
 
 `hirdavat.ai` DNS kayitlari Namecheap tarafinda yonetiliyor. Canli Bubble site kayitlari degistirilmedi.
 
-QuestPDF API icin eklenen tek kayit:
+QuestPDF API icin eklenen kayit:
 
 ```text
 Type: A Record
@@ -40,13 +52,24 @@ Value: <vps-public-ip>
 TTL: Automatic
 ```
 
-Bu kayit sadece `pdf-api.hirdavat.ai` adresini etkiler. `hirdavat.ai`, `www.hirdavat.ai`, Bubble kayitlari, email/MX ve TXT kayitlari ayni kalir.
+Mobil React host icin eklenen kayit:
+
+```text
+Type: A Record
+Host: m
+Value: <vps-public-ip>
+TTL: Automatic
+```
+
+Bu kayitlar sadece `pdf-api.hirdavat.ai` ve `m.hirdavat.ai` adreslerini etkiler. `hirdavat.ai`, `www.hirdavat.ai`, Bubble kayitlari, email/MX ve TXT kayitlari ayni kalir.
 
 DNS kontrolu:
 
 ```bash
 dig +short pdf-api.hirdavat.ai A
+dig +short m.hirdavat.ai A
 dig @dns1.registrar-servers.com +short pdf-api.hirdavat.ai A
+dig @dns1.registrar-servers.com +short m.hirdavat.ai A
 ```
 
 Beklenen sonuc:
@@ -81,7 +104,7 @@ Ana servisler:
 
 ```text
 questpdf-api  ASP.NET 8 + QuestPDF API
-caddy         HTTPS reverse proxy ve otomatik Let's Encrypt SSL
+caddy         HTTPS reverse proxy, mobil static host ve otomatik Let's Encrypt SSL
 ```
 
 `cloudflared` servisi compose dosyasinda kalabilir, ancak production akista kullanilmiyor ve durdurulmus olmasi beklenir.
@@ -121,6 +144,82 @@ Rebuild/deploy:
 docker compose up -d --build questpdf-api caddy
 ```
 
+## Mobil Static Host
+
+Mobil React release klasorleri:
+
+```text
+/opt/hirdavat-mobile/releases/<release-id>
+/opt/hirdavat-mobile/current -> /opt/hirdavat-mobile/releases/<release-id>
+```
+
+Host path `/opt/hirdavat-mobile/current`, Caddy container icinde `/srv/hirdavat-mobile/current` olarak read-only mount edilir.
+
+Ilk kurulum:
+
+```bash
+mkdir -p /opt/hirdavat-mobile/releases
+```
+
+Local build ve upload:
+
+```bash
+cd /Users/batuhanmerguz/Desktop/hirdavatai-mobile
+npm run build
+
+RELEASE_ID=<yyyy-mm-dd-short-sha>
+ssh -i ~/.ssh/<deploy-key> root@<vps-public-ip> "mkdir -p /opt/hirdavat-mobile/releases/$RELEASE_ID"
+rsync -az --delete dist/ \
+  -e "ssh -i ~/.ssh/<deploy-key>" \
+  root@<vps-public-ip>:/opt/hirdavat-mobile/releases/$RELEASE_ID/
+ssh -i ~/.ssh/<deploy-key> root@<vps-public-ip> \
+  "ln -sfn /opt/hirdavat-mobile/releases/$RELEASE_ID /opt/hirdavat-mobile/current"
+```
+
+Caddy compose mount'u:
+
+```yaml
+caddy:
+  volumes:
+    - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    - /opt/hirdavat-mobile:/srv/hirdavat-mobile:ro
+    - caddy-data:/data
+    - caddy-config:/config
+```
+
+Caddy host block'u:
+
+```caddyfile
+m.hirdavat.ai {
+    root * /srv/hirdavat-mobile/current
+    encode zstd gzip
+
+    @index path / /index.html
+    header @index Cache-Control "no-store"
+
+    @static path /assets/*
+    header @static Cache-Control "no-cache, must-revalidate"
+
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Content-Security-Policy "frame-ancestors https://hirdavat.ai https://kodsuzai.bubbleapps.io"
+    }
+
+    try_files {path} /index.html
+    file_server
+}
+```
+
+Bu mobil repo su anda sabit Vite asset adlari uretir:
+
+```text
+assets/index.js
+assets/index.css
+```
+
+Bu nedenle ilk production modelde `/assets/*` icin agresif cache kullanilmaz.
+
 ## Secrets ve Environment
 
 Sunucudaki env dosyasi:
@@ -149,6 +248,13 @@ grep '^QUESTPDF_API_KEY=' .env
 ```
 
 ## Public Endpoints
+
+Mobil React:
+
+```text
+GET https://m.hirdavat.ai/
+GET https://m.hirdavat.ai/assets/index.js
+```
 
 Health:
 
@@ -229,6 +335,13 @@ Open external website -> Result of step Create QuestPDF Order Slip's pdf_url
 
 ## Test Komutlari
 
+Mobil host:
+
+```bash
+curl -i https://m.hirdavat.ai/
+curl -I https://m.hirdavat.ai/assets/index.js
+```
+
 Health:
 
 ```bash
@@ -259,8 +372,42 @@ curl -i -X POST https://pdf-api.hirdavat.ai/render/order-slip-url \
 DNS cache gecikmesi varsa, test icin dogrudan IP cozumlemesi kullanilabilir:
 
 ```bash
+curl --resolve m.hirdavat.ai:443:<vps-public-ip> \
+  -i https://m.hirdavat.ai/
 curl --resolve pdf-api.hirdavat.ai:443:<vps-public-ip> \
   -i https://pdf-api.hirdavat.ai/health
+```
+
+PDF regression kontrolleri mobil host deploy'undan sonra da zorunludur:
+
+```bash
+curl -i https://pdf-api.hirdavat.ai/health
+curl -i -X POST https://pdf-api.hirdavat.ai/render/order-slip-url \
+  -H "Content-Type: application/json" \
+  --data '{}'
+```
+
+Beklenti:
+
+```text
+GET /health -> 200
+Secretsiz /render/order-slip-url -> 401 JSON error
+```
+
+## Mobil Rollback
+
+Onceki release'e don:
+
+```bash
+ssh -i ~/.ssh/<deploy-key> root@<vps-public-ip> \
+  "ln -sfn /opt/hirdavat-mobile/releases/<previous-release-id> /opt/hirdavat-mobile/current"
+```
+
+Caddy reload/restart:
+
+```bash
+ssh -i ~/.ssh/<deploy-key> root@<vps-public-ip> \
+  "cd /opt/hirdavat-print-engine && docker compose restart caddy"
 ```
 
 ## Dosya Saklama

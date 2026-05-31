@@ -1,5 +1,28 @@
 # QuestPDF Production Hosting Plan
 
+## Current production note
+
+Bu dokuman ilk planlama kararlarini tarihsel baglam olarak saklar. Guncel ve authoritative production runbook:
+
+```text
+docs/QUESTPDF_SERVER_RUNBOOK.md
+```
+
+Bugunku production yolu:
+
+```text
+Namecheap A record -> Hostinger VPS -> Caddy -> questpdf-api
+```
+
+Mobil React host ayni Caddy uzerinde statik dosya olarak servis edilir:
+
+```text
+https://m.hirdavat.ai -> host:/opt/hirdavat-mobile/current
+                      -> caddy:/srv/hirdavat-mobile/current
+```
+
+Asagidaki Cloudflare Tunnel/R2 onerisi ilk plan olarak kalmistir; mevcut canli yol degildir.
+
 Bu dokuman, QuestPDF tabanli PDF API'nin production ortaminda nasil calistirilacagini tanimlar.
 
 ## Karar Ozeti

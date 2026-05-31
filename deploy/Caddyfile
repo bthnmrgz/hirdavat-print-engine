@@ -1,3 +1,23 @@
 pdf-api.hirdavat.ai {
-    reverse_proxy questpdf-api:5159
+	reverse_proxy questpdf-api:5159
+}
+
+m.hirdavat.ai {
+	root * /srv/hirdavat-mobile/current
+	encode zstd gzip
+
+	@index path / /index.html
+	header @index Cache-Control "no-store"
+
+	@static path /assets/*
+	header @static Cache-Control "no-cache, must-revalidate"
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		Content-Security-Policy "frame-ancestors https://hirdavat.ai https://kodsuzai.bubbleapps.io"
+	}
+
+	try_files {path} /index.html
+	file_server
 }
