@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using QuestPDF.Fluent;
@@ -51,12 +53,17 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.MapGet("/health", () => Results.Ok(new { ok = true, service = "hirdavat-questpdf" }));
 
-app.MapPost("/render/order-slip", async Task<IResult> (PrintDocumentPayload payload, IHttpClientFactory httpClientFactory, HttpContext httpContext) =>
+app.MapPost("/render/order-slip", async Task<IResult> (IHttpClientFactory httpClientFactory, HttpContext httpContext) =>
 {
     var authError = RequireApiKey(httpContext, apiKey);
     if (authError is not null)
         return authError;
 
+    var payloadResult = await ReadPayloadAsync(httpContext);
+    if (payloadResult.Error is not null)
+        return payloadResult.Error;
+
+    var payload = payloadResult.Payload!;
     var error = Validate(payload);
 
     if (!string.IsNullOrWhiteSpace(error))
@@ -79,12 +86,17 @@ app.MapPost("/render/order-slip", async Task<IResult> (PrintDocumentPayload payl
     return Results.File(pdf, "application/pdf", fileName);
 });
 
-app.MapPost("/render/order-slip-url", async Task<IResult> (PrintDocumentPayload payload, IHttpClientFactory httpClientFactory, HttpContext httpContext) =>
+app.MapPost("/render/order-slip-url", async Task<IResult> (IHttpClientFactory httpClientFactory, HttpContext httpContext) =>
 {
     var authError = RequireApiKey(httpContext, apiKey);
     if (authError is not null)
         return authError;
 
+    var payloadResult = await ReadPayloadAsync(httpContext);
+    if (payloadResult.Error is not null)
+        return payloadResult.Error;
+
+    var payload = payloadResult.Payload!;
     var error = Validate(payload);
 
     if (!string.IsNullOrWhiteSpace(error))
@@ -157,6 +169,154 @@ static IResult? RequireApiKey(HttpContext httpContext, string? configuredApiKey)
     return null;
 }
 
+static async Task<(PrintDocumentPayload? Payload, IResult? Error)> ReadPayloadAsync(HttpContext httpContext)
+{
+    using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+    var rawBody = await reader.ReadToEndAsync();
+
+    if (string.IsNullOrWhiteSpace(rawBody))
+        return (null, InvalidPayloadError("empty_body", "Request body bos veya JSON olarak okunamadi."));
+
+    if (WantsLabelerLinesPayload(httpContext))
+        return ReadLabelerLinesPayload(httpContext, rawBody);
+
+    try
+    {
+        return ParsePayload(rawBody);
+    }
+    catch (JsonException exception)
+    {
+        return (null, InvalidPayloadError("invalid_json", "Request body gecerli JSON olmali.", exception.Message));
+    }
+}
+
+static (PrintDocumentPayload? Payload, IResult? Error) ParsePayload(string body)
+{
+    var payload = JsonSerializer.Deserialize<PrintDocumentPayload>(body);
+
+    if (payload is null)
+        return (null, InvalidPayloadError("empty_body", "Request body bos veya JSON olarak okunamadi."));
+
+    return (payload, null);
+}
+
+static (PrintDocumentPayload? Payload, IResult? Error) ReadLabelerLinesPayload(HttpContext httpContext, string rawBody)
+{
+    var rowDelimiter = NormalizeDelimiter(FirstRequestText(httpContext, "row_delimiter", "X-Row-Delimiter"), "\n");
+    var fieldDelimiter = NormalizeDelimiter(FirstRequestText(httpContext, "field_delimiter", "X-Field-Delimiter"), "__FIELD__");
+    var rows = SplitRawRows(rawBody, rowDelimiter);
+
+    if (rows.Count == 0)
+        return (null, InvalidPayloadError("invalid_raw", "Raw labeler body en az bir satir icermelidir."));
+
+    var labels = new List<LabelerItem>();
+
+    for (var index = 0; index < rows.Count; index++)
+    {
+        var parts = rows[index].Split(fieldDelimiter, 3, StringSplitOptions.None);
+        var svgCode = DecodeHtmlEntities(Text(parts.ElementAtOrDefault(0)));
+        var stockName = DecodeHtmlEntities(Text(parts.ElementAtOrDefault(1)));
+        var countText = Text(parts.ElementAtOrDefault(2));
+
+        if (string.IsNullOrWhiteSpace(svgCode))
+            return (null, InvalidPayloadError("invalid_raw", $"raw satir[{index + 1}] SVG icermelidir."));
+
+        var labelCount = 1;
+
+        if (!string.IsNullOrWhiteSpace(countText)
+            && (!int.TryParse(countText, NumberStyles.Integer, CultureInfo.InvariantCulture, out labelCount) || labelCount < 1))
+        {
+            return (null, InvalidPayloadError("invalid_raw", $"raw satir[{index + 1}] adet degeri 1 veya daha buyuk sayi olmalidir."));
+        }
+
+        labels.Add(new LabelerItem
+        {
+            SvgCode = svgCode,
+            StockName = stockName,
+            LabelCount = labelCount
+        });
+    }
+
+    return (new PrintDocumentPayload
+    {
+        DocumentType = "labeler",
+        DocumentNo = FirstRequestText(httpContext, "document_no", "documentNo", "X-Document-No"),
+        Labels = labels
+    }, null);
+}
+
+static bool WantsLabelerLinesPayload(HttpContext httpContext)
+{
+    var mode = Text(FirstRequestText(httpContext, "body_mode", "X-QuestPDF-Body-Mode"));
+
+    return mode.Equals("labeler_lines", StringComparison.OrdinalIgnoreCase)
+        || mode.Equals("labeler-lines", StringComparison.OrdinalIgnoreCase);
+}
+
+static string? FirstRequestText(HttpContext httpContext, params string[] names)
+{
+    foreach (var name in names)
+    {
+        var queryValue = Text(httpContext.Request.Query[name].FirstOrDefault());
+
+        if (queryValue.Length > 0)
+            return DecodeHtmlEntities(queryValue);
+
+        var headerValue = Text(httpContext.Request.Headers[name].FirstOrDefault());
+
+        if (headerValue.Length > 0)
+            return DecodeHtmlEntities(headerValue);
+    }
+
+    return null;
+}
+
+static string NormalizeDelimiter(string? value, string fallback)
+{
+    var delimiter = Text(value);
+
+    if (delimiter.Length == 0)
+        delimiter = fallback;
+
+    return delimiter
+        .Replace("\\r\\n", "\n", StringComparison.Ordinal)
+        .Replace("\\n", "\n", StringComparison.Ordinal)
+        .Replace("\\r", "\n", StringComparison.Ordinal)
+        .Replace("\\t", "\t", StringComparison.Ordinal);
+}
+
+static List<string> SplitRawRows(string rawBody, string delimiter)
+{
+    var text = DecodeHtmlEntities(rawBody).Trim();
+
+    if (text.Length == 0)
+        return [];
+
+    var rows = delimiter == "\n"
+        ? text.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        : text.Split(delimiter, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    return rows
+        .Where(row => row.Length > 0)
+        .ToList();
+}
+
+static string DecodeHtmlEntities(string value) => WebUtility.HtmlDecode(value) ?? "";
+
+static IResult InvalidPayloadError(string code, string message, string? detail = null)
+{
+    return Results.Json(new
+    {
+        ok = false,
+        error = new
+        {
+            code,
+            message,
+            detail
+        }
+    }, statusCode: StatusCodes.Status400BadRequest);
+}
+
 static string[] SplitCsv(string? value)
 {
     return Text(value)
@@ -205,7 +365,10 @@ static string Validate(PrintDocumentPayload payload)
     var documentType = Text(payload.DocumentType);
 
     if (!IsAllowedDocumentType(documentType))
-        return "document_type 'quote', 'receipt', 'order_slip' veya 'cari_ledger' olmalidir.";
+        return "document_type 'quote', 'receipt', 'order_slip', 'cari_ledger' veya 'labeler' olmalidir.";
+
+    if (documentType == "labeler")
+        return ValidateLabeler(payload);
 
     if (documentType == "cari_ledger")
     {
@@ -254,7 +417,30 @@ static string Validate(PrintDocumentPayload payload)
 
 static bool IsAllowedDocumentType(string documentType)
 {
-    return documentType is "quote" or "receipt" or "order_slip" or "cari_ledger";
+    return documentType is "quote" or "receipt" or "order_slip" or "cari_ledger" or "labeler";
+}
+
+static string ValidateLabeler(PrintDocumentPayload payload)
+{
+    if (payload.Labels is not { Count: > 0 })
+        return "labels alani en az bir etiket icermelidir.";
+
+    for (var index = 0; index < payload.Labels.Count; index++)
+    {
+        var label = payload.Labels[index];
+        var itemNo = index + 1;
+
+        if (string.IsNullOrWhiteSpace(label.SvgCode))
+            return $"labels[{itemNo}].svg_kod zorunludur.";
+
+        if (!IsValidSvgCode(label.SvgCode))
+            return $"labels[{itemNo}].svg_kod gecerli SVG olmalidir.";
+
+        if (label.LabelCount < 1)
+            return $"labels[{itemNo}].etiket_adedi 1 veya daha buyuk olmalidir.";
+    }
+
+    return "";
 }
 
 static async Task<byte[]?> TryFetchLogoAsync(string? logoUrl, IHttpClientFactory httpClientFactory)
@@ -303,6 +489,32 @@ static bool LooksLikeSvgBytes(byte[] bytes)
         || text.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) && text.Contains("<svg", StringComparison.OrdinalIgnoreCase);
 }
 
+static bool LooksLikeSvgContent(string? value)
+{
+    var text = NormalizeSvgCode(value);
+
+    return text.StartsWith("<svg", StringComparison.OrdinalIgnoreCase)
+        || text.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) && text.Contains("<svg", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool IsValidSvgCode(string? value)
+{
+    var text = NormalizeSvgCode(value);
+
+    if (!LooksLikeSvgContent(text))
+        return false;
+
+    try
+    {
+        _ = SvgImage.FromText(text);
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
 static string UniquePdfFileName(string? documentNo, string fallback)
 {
     var baseName = SafeFileName(documentNo, fallback);
@@ -311,7 +523,12 @@ static string UniquePdfFileName(string? documentNo, string fallback)
 
 static string UrlFileNameFallback(PrintDocumentPayload payload)
 {
-    return Text(payload.DocumentType) == "cari_ledger" ? "cari-ledger" : "order-slip";
+    return Text(payload.DocumentType) switch
+    {
+        "cari_ledger" => "cari-ledger",
+        "labeler" => "labeler",
+        _ => "order-slip"
+    };
 }
 
 static string PublicUrl(HttpContext httpContext, string path)
@@ -331,6 +548,14 @@ static string FirstHeader(HttpRequest request, string name, string fallback)
 
 sealed class PrintDocumentPdfDocument : IDocument
 {
+    private const double LabelerLabelWidthMm = 70;
+    private const double LabelerLabelHeightMm = 37;
+    private const double LabelerQrSizeMm = 32;
+    private const double LabelerCellPaddingMm = 1;
+    private const int LabelerColumns = 3;
+    private const int LabelerRows = 8;
+    private const int LabelerLabelsPerPage = LabelerColumns * LabelerRows;
+
     private readonly PrintDocumentPayload _payload;
     private readonly byte[]? _logoBytes;
     private readonly NormalizedPrintStyle _style;
@@ -362,6 +587,12 @@ sealed class PrintDocumentPdfDocument : IDocument
 
     public void Compose(IDocumentContainer container)
     {
+        if (DocumentType == "labeler")
+        {
+            ComposeLabelerDocument(container);
+            return;
+        }
+
         container.Page(page =>
         {
             page.Size(_style.PaperSize);
@@ -513,10 +744,88 @@ sealed class PrintDocumentPdfDocument : IDocument
             case "cari_ledger":
                 ComposeCariLedger(container);
                 break;
+            case "labeler":
+                ComposeLabelerPage(container, ExpandedLabelerItems());
+                break;
             default:
                 ComposeItemsTable(container);
                 break;
         }
+    }
+
+    private void ComposeLabelerDocument(IDocumentContainer container)
+    {
+        var labels = ExpandedLabelerItems();
+
+        foreach (var pageLabels in labels.Chunk(LabelerLabelsPerPage))
+        {
+            container.Page(page =>
+            {
+                page.Size(210, 297, Unit.Millimetre);
+                page.Margin(0);
+                page.DefaultTextStyle(text => text.FontSize(6).FontColor(Colors.Black));
+                page.Content().Element(element => ComposeLabelerPage(element, pageLabels));
+            });
+        }
+    }
+
+    private List<LabelerItem> ExpandedLabelerItems()
+    {
+        var labels = new List<LabelerItem>();
+
+        if (_payload.Labels is null)
+            return labels;
+
+        foreach (var label in _payload.Labels)
+        {
+            for (var index = 0; index < label.LabelCount; index++)
+                labels.Add(label);
+        }
+
+        return labels;
+    }
+
+    private void ComposeLabelerPage(IContainer container, IReadOnlyList<LabelerItem> labels)
+    {
+        container.Table(table =>
+        {
+            table.ColumnsDefinition(columns =>
+            {
+                for (var index = 0; index < LabelerColumns; index++)
+                    columns.ConstantColumn(Mm(LabelerLabelWidthMm));
+            });
+
+            foreach (var label in labels)
+            {
+                table.Cell()
+                    .Width(Mm(LabelerLabelWidthMm))
+                    .Height(Mm(LabelerLabelHeightMm))
+                    .Element(element => ComposeLabelerCell(element, label));
+            }
+        });
+    }
+
+    private void ComposeLabelerCell(IContainer container, LabelerItem label)
+    {
+        container
+            .Background(Colors.White)
+            .Padding(Mm(LabelerCellPaddingMm))
+            .Row(row =>
+            {
+                row.ConstantItem(Mm(LabelerQrSizeMm))
+                    .Height(Mm(LabelerQrSizeMm))
+                    .Background(Colors.White)
+                    .Svg(NormalizeSvgCode(label.SvgCode))
+                    .FitArea();
+
+                row.ConstantItem(Mm(1.5));
+
+                row.RelativeItem()
+                    .AlignMiddle()
+                    .Text(Text(label.StockName))
+                    .FontSize(6)
+                    .Bold();
+            });
     }
 
     private void ComposeCariLedger(IContainer container)
@@ -1315,6 +1624,30 @@ static class PdfHelpers
 
     public static string Text(string? value) => value?.Trim() ?? "";
 
+    public static string NormalizeSvgCode(string? value)
+    {
+        var text = WebUtility.HtmlDecode(Text(value))
+            .TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+
+        if (!text.StartsWith("<svg", StringComparison.OrdinalIgnoreCase))
+            return text;
+
+        var insertAt = text.IndexOf('>');
+
+        if (insertAt < 0)
+            return text;
+
+        if (!text.Contains("shape-rendering=", StringComparison.OrdinalIgnoreCase))
+            text = text.Insert(insertAt, " shape-rendering=\"crispEdges\"");
+
+        insertAt = text.IndexOf('>');
+
+        if (!text.Contains("preserveAspectRatio=", StringComparison.OrdinalIgnoreCase))
+            text = text.Insert(insertAt, " preserveAspectRatio=\"xMidYMid meet\"");
+
+        return text;
+    }
+
     public static float Mm(double value) => (float)(value * 72 / 25.4);
 
     public static double Clamp(double? value, double fallback, double min, double max)
@@ -1426,6 +1759,9 @@ sealed class PrintDocumentPayload
     [JsonPropertyName("items")]
     public List<OrderItem>? Items { get; init; }
 
+    [JsonPropertyName("labels")]
+    public List<LabelerItem>? Labels { get; init; }
+
     [JsonPropertyName("detail_fields")]
     public List<LabeledValueRow>? DetailFields { get; init; }
 
@@ -1491,6 +1827,18 @@ sealed class CariLedgerParty
 
     [JsonPropertyName("type")]
     public string? Type { get; init; }
+}
+
+sealed class LabelerItem
+{
+    [JsonPropertyName("svg_kod")]
+    public string? SvgCode { get; init; }
+
+    [JsonPropertyName("stok_adi")]
+    public string? StockName { get; init; }
+
+    [JsonPropertyName("etiket_adedi")]
+    public int LabelCount { get; init; }
 }
 
 sealed class CariLedgerView

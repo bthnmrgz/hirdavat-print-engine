@@ -396,3 +396,72 @@ Production dogrulamalari:
 - API key olmadan `/render/order-slip-url` -> `401`, `ok: false`, `error.code: "unauthorized"`
 - SVG logolu canli siparis payload'i (`ÖZG2026-702`) -> `200`, `ok: true`, `pdf_url`
 - Uretilen PDF URL'i -> `200`, `content-type: application/pdf`, `content-length: 37309`
+
+## 2026-06-09 Labeler QR Etiket Modulu
+
+Istek:
+
+- Printer servisine `labeler` isimli QR etiket modulu eklenecek.
+- Bubble mevcut `/render/order-slip-url` endpoint'ine SVG QR kodu, etiket adi ve etiket adedi gonderecek.
+- Cikti TopStick 8706 / 70x37mm / A4 3x8 etiket kalibina uygun olacak.
+
+Kontrat:
+
+- `document_type: "labeler"` yeni layout secimi olarak kabul edilir.
+- Root-level `labels` listesi zorunludur.
+- Her etiket icin `svg_kod`, `stok_adi` ve `etiket_adedi` alanlari kullanilir.
+- `svg_kod` gecerli SVG icerigi olmali; bos veya parse edilemeyen SVG `400` validation hatasi dondurur.
+- `etiket_adedi` ayni etiketi cogaltir ve her sayfada en fazla 24 etiket render edilir.
+- `company`, `items` ve `table` labeler icin zorunlu degildir.
+
+Kod guncellemeleri:
+
+- `questpdf-service/Program.cs` icinde `labeler` izinli `document_type` listesine eklendi.
+- Labeler PDF akisi header'siz A4 sayfa ve 70x37mm sabit hucre ile render edilir.
+- QR SVG, logo render yolundaki raster `Image(byte[])` API'sine verilmez; QuestPDF SVG destegi ile string SVG olarak basilir.
+- `examples/labeler-valid.json`, root README ve servis README dosyalari yeni kontratla guncellendi.
+
+Lokal dogrulama hedefleri:
+
+- `dotnet build questpdf-service/HirdavatQuestPdf.Api.csproj`
+- `examples/labeler-valid.json` ile `/render/order-slip-url` -> `200`, `ok: true`, `pdf_url`
+- 24'ten fazla etiket ikinci sayfaya akar.
+
+Production deploy:
+
+- 2026-06-10 tarihinde `questpdf-service/Program.cs`, README dosyalari ve `examples/labeler-valid.json` Hostinger VPS uzerindeki `/opt/hirdavat-print-engine` klasorune senkronize edildi.
+- `docker compose up -d --build questpdf-api caddy` ile QuestPDF API container'i yeniden build/start edildi.
+
+Production dogrulamalari:
+
+- `GET https://pdf-api.hirdavat.ai/health` -> `200`, `ok: true`
+- `examples/labeler-valid.json` ile `/render/order-slip-url` -> `200`, `ok: true`, `pdf_url`
+- Uretilen PDF URL'i -> `200`, `content-type: application/pdf`, `content-length: 13485`
+
+## 2026-06-10 Labeler QR Okunabilirlik Iyilestirmesi
+
+Istek:
+
+- PDF tarafindaki QR ciktilari Bubble preview kalitesine yaklasmali ve scanner ile okunabilir olmali.
+
+Kod guncellemeleri:
+
+- Labeler QR kutusu 28mm'den 32mm'ye buyutuldu.
+- `svg_kod` render oncesi HTML decode edilir; Bubble tarafindan `&lt;svg...` biciminde gelirse dogru SVG olarak islenir.
+- SVG root'una eksikse `shape-rendering="crispEdges"` ve `preserveAspectRatio="xMidYMid meet"` eklenir.
+- Etiket hucreleri ve QR alani beyaz zeminle render edilir.
+
+## 2026-06-10 Bubble Raw Labeler Lines Modu
+
+Istek:
+
+- Bubble API Connector runtime'da dinamik liste objelerini JSON body icinde uretmek kirilgan kaldigi icin labeler akisi JSON disi, sade raw text formatina alinacak.
+- Calisan Raw kontrat korunacak; denenen JSON quote/entity fallback'leri kalici kontrata dahil edilmeyecek.
+
+Kod guncellemeleri:
+
+- `body_mode=labeler_lines` aktifken request body JSON parse'a sokulmaz.
+- URL/query veya header ile `row_delimiter` ve `field_delimiter` okunur; Bubble'da kullanilan final degerler `__ROW__` ve `__FIELD__`.
+- Raw body satir formati `svg__FIELD__stok_adi__FIELD__adet` olarak parse edilir.
+- `adet` bos gelirse varsayilan `1` kullanilir.
+- Standart JSON payload destegi korunur; sadece Bubble labeler runtime icin raw text yolu tercih edilir.
