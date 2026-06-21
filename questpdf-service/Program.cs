@@ -74,7 +74,7 @@ app.MapPost("/render/order-slip", async Task<IResult> (IHttpClientFactory httpCl
     try
     {
         var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
-        pdf = new PrintDocumentPdfDocument(payload, logoBytes).GeneratePdf();
+        pdf = GeneratePrintPdf(payload, logoBytes);
     }
     catch (Exception exception)
     {
@@ -111,7 +111,7 @@ app.MapPost("/render/order-slip-url", async Task<IResult> (IHttpClientFactory ht
     try
     {
         var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
-        pdf = new PrintDocumentPdfDocument(payload, logoBytes).GeneratePdf();
+        pdf = GeneratePrintPdf(payload, logoBytes);
     }
     catch (Exception exception)
     {
@@ -474,6 +474,38 @@ static async Task<byte[]?> TryFetchLogoAsync(string? logoUrl, IHttpClientFactory
     }
 }
 
+static byte[] GeneratePrintPdf(PrintDocumentPayload payload, byte[]? logoBytes)
+{
+    if (Text(payload.DocumentType) == "labeler")
+        return new PrintDocumentPdfDocument(payload, logoBytes).GeneratePdf();
+
+    var pdf = new PrintDocumentPdfDocument(payload, logoBytes, showPageNumbers: false).GeneratePdf();
+
+    return CountPdfPages(pdf) > 1
+        ? new PrintDocumentPdfDocument(payload, logoBytes, showPageNumbers: true).GeneratePdf()
+        : pdf;
+}
+
+static int CountPdfPages(byte[] pdf)
+{
+    const string marker = "/Type /Page";
+    var text = Encoding.ASCII.GetString(pdf);
+    var count = 0;
+    var index = 0;
+
+    while ((index = text.IndexOf(marker, index, StringComparison.Ordinal)) >= 0)
+    {
+        var afterMarker = index + marker.Length;
+
+        if (afterMarker >= text.Length || text[afterMarker] != 's')
+            count++;
+
+        index = afterMarker;
+    }
+
+    return Math.Max(count, 1);
+}
+
 static bool LooksLikeSvgText(string? value)
 {
     var text = Text(value).ToLowerInvariant();
@@ -552,6 +584,7 @@ sealed class PrintDocumentPdfDocument : IDocument
     private const double LabelerLabelHeightMm = 37;
     private const double LabelerQrSizeMm = 32;
     private const double LabelerCellPaddingMm = 1;
+    private const double PageNumberFooterHeightMm = 6;
     private const int LabelerColumns = 3;
     private const int LabelerRows = 8;
     private const int LabelerLabelsPerPage = LabelerColumns * LabelerRows;
@@ -559,12 +592,14 @@ sealed class PrintDocumentPdfDocument : IDocument
     private readonly PrintDocumentPayload _payload;
     private readonly byte[]? _logoBytes;
     private readonly NormalizedPrintStyle _style;
+    private readonly bool _showPageNumbers;
 
-    public PrintDocumentPdfDocument(PrintDocumentPayload payload, byte[]? logoBytes)
+    public PrintDocumentPdfDocument(PrintDocumentPayload payload, byte[]? logoBytes, bool showPageNumbers = false)
     {
         _payload = payload;
         _logoBytes = logoBytes;
         _style = NormalizedPrintStyle.From(payload.PrintStyle);
+        _showPageNumbers = showPageNumbers;
     }
 
     private string DocumentType => Text(_payload.DocumentType);
@@ -599,11 +634,13 @@ sealed class PrintDocumentPdfDocument : IDocument
             page.Margin(Mm(_style.PageMarginMm));
             page.DefaultTextStyle(text => text.FontSize((float)_style.BodyFontPx).FontColor(Colors.Grey.Darken4));
 
+            page.Header()
+                .PaddingBottom(Mm(HeaderBodyGapMm))
+                .Element(ComposeHeader);
+
             page.Content()
                 .Column(column =>
                 {
-                    column.Spacing(Mm(HeaderBodyGapMm));
-                    column.Item().Element(ComposeHeader);
                     column.Item().Element(ComposeBody);
 
                     if (!string.IsNullOrWhiteSpace(_payload.Order?.Note))
@@ -613,6 +650,33 @@ sealed class PrintDocumentPdfDocument : IDocument
                             .Text(Text(_payload.Order.Note));
                     }
                 });
+
+            page.Footer().Element(ComposePageNumberFooter);
+        });
+    }
+
+    private void ComposePageNumberFooter(IContainer container)
+    {
+        var footer = container
+            .Height(Mm(PageNumberFooterHeightMm))
+            .AlignCenter()
+            .AlignMiddle()
+            .DefaultTextStyle(text => text
+                .FontSize((float)Math.Max(_style.BodyFontPx - 0.4, 5.5))
+                .FontColor(Colors.Grey.Darken1));
+
+        if (!_showPageNumbers)
+        {
+            footer.Text("");
+            return;
+        }
+
+        footer.Text(text =>
+        {
+            text.Span("Sayfa ");
+            text.CurrentPageNumber();
+            text.Span("/");
+            text.TotalPages();
         });
     }
 

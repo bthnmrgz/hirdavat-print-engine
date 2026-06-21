@@ -84,6 +84,8 @@ Validation rules:
 - `cari_ledger` requires `cari.name` and root-level `columns`; `rows` may be empty.
 - `labeler` requires root-level `labels`; it does not require `company`, `items`, or `table`.
 - `customer` is optional. If omitted, null, or empty, the customer header block is hidden.
+- For `quote`, `receipt`, `order_slip`, and `cari_ledger`, the document header repeats on every page. Multi-page PDFs show `Sayfa X/Y` centered at the bottom.
+- `labeler` keeps its fixed label grid and does not render document headers or page numbers.
 
 Bubble or any caller should send formatted visible strings for money and totals. The service validates and renders; it does not calculate KDV, discount, withholding, or grand totals.
 

@@ -59,6 +59,8 @@ curl -X POST http://localhost:5159/render/order-slip-url \
 - `quote` and `order_slip` require `items` or `table`.
 - `receipt` requires `payments` or `table`.
 - Callers send formatted totals and visible amount strings. The service validates and renders them, but does not calculate tax, discount, withholding, or grand totals.
+- Normal documents repeat their header on every page. When the output has more than one page, `Sayfa X/Y` is rendered at the bottom center.
+- `labeler` keeps its fixed label grid and does not render document headers or page numbers.
 
 Quote-specific fields:
 
