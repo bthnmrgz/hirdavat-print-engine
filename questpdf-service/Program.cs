@@ -213,7 +213,7 @@ app.MapPost("/render/catalog-price-list-url", async Task<IResult> (IHttpClientFa
     CleanupGeneratedPdfs(generatedPdfDirectory, pdfRetention, app.Logger);
     await File.WriteAllBytesAsync(filePath, pdf);
 
-    var publicUrl = PublicUrl(httpContext, "/files/" + Uri.EscapeDataString(fileName));
+    var publicUrl = PublicUrl(httpContext, CatalogFilePublicPath(httpContext, fileName));
 
     return Results.Ok(new
     {
@@ -746,7 +746,46 @@ static async Task<byte[]?> TryFetchRasterImageAsync(string imageUrl, HttpClient 
     if (bytes.Length == 0 || bytes.Length > maxImageBytes)
         return null;
 
-    return LooksLikeSvgBytes(bytes) ? null : bytes;
+    return LooksLikeSvgBytes(bytes) || !LooksLikeSupportedRasterImage(bytes) ? null : bytes;
+}
+
+static bool LooksLikeSupportedRasterImage(byte[] bytes)
+{
+    if (bytes.Length >= 8
+        && bytes[0] == 0x89
+        && bytes[1] == 0x50
+        && bytes[2] == 0x4E
+        && bytes[3] == 0x47
+        && bytes[4] == 0x0D
+        && bytes[5] == 0x0A
+        && bytes[6] == 0x1A
+        && bytes[7] == 0x0A)
+        return true;
+
+    if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+        return true;
+
+    if (bytes.Length >= 6
+        && bytes[0] == 0x47
+        && bytes[1] == 0x49
+        && bytes[2] == 0x46
+        && bytes[3] == 0x38
+        && (bytes[4] == 0x37 || bytes[4] == 0x39)
+        && bytes[5] == 0x61)
+        return true;
+
+    if (bytes.Length >= 12
+        && bytes[0] == 0x52
+        && bytes[1] == 0x49
+        && bytes[2] == 0x46
+        && bytes[3] == 0x46
+        && bytes[8] == 0x57
+        && bytes[9] == 0x45
+        && bytes[10] == 0x42
+        && bytes[11] == 0x50)
+        return true;
+
+    return bytes.Length >= 2 && bytes[0] == 0x42 && bytes[1] == 0x4D;
 }
 
 static byte[] GeneratePrintPdf(PrintDocumentPayload payload, byte[]? logoBytes)
@@ -853,6 +892,26 @@ static string PublicUrl(HttpContext httpContext, string path)
     var host = FirstHeader(request, "X-Forwarded-Host", request.Host.Value);
 
     return proto + "://" + host + path;
+}
+
+static string CatalogFilePublicPath(HttpContext httpContext, string fileName)
+{
+    var encodedFileName = Uri.EscapeDataString(fileName);
+    var prefix = FirstHeader(httpContext.Request, "X-Forwarded-Prefix", "").TrimEnd('/');
+
+    if (string.IsNullOrWhiteSpace(prefix) && IsPublicPdfApiHost(httpContext))
+        prefix = "/catalog";
+
+    return string.IsNullOrWhiteSpace(prefix)
+        ? "/files/" + encodedFileName
+        : prefix + "/files/" + encodedFileName;
+}
+
+static bool IsPublicPdfApiHost(HttpContext httpContext)
+{
+    var host = FirstHeader(httpContext.Request, "X-Forwarded-Host", httpContext.Request.Host.Value);
+    var hostName = host.Split(':', 2)[0];
+    return hostName.Equals("pdf-api.hirdavat.ai", StringComparison.OrdinalIgnoreCase);
 }
 
 static string FirstHeader(HttpRequest request, string name, string fallback)
@@ -2217,17 +2276,30 @@ sealed class CatalogPriceListPdfDocument : IDocument
             {
                 if (imageBytes is not null)
                 {
-                    element.Image(imageBytes).FitArea();
+                    try
+                    {
+                        element.Image(imageBytes).FitArea();
+                    }
+                    catch
+                    {
+                        ComposeProductImageFallback(element, product);
+                    }
+
                     return;
                 }
 
-                element.AlignCenter()
-                    .AlignMiddle()
-                    .Text(ProductInitials(product))
-                    .FontSize(7)
-                    .SemiBold()
-                    .FontColor(_palette.Muted);
+                ComposeProductImageFallback(element, product);
             });
+    }
+
+    private void ComposeProductImageFallback(IContainer container, CatalogProduct product)
+    {
+        container.AlignCenter()
+            .AlignMiddle()
+            .Text(ProductInitials(product))
+            .FontSize(7)
+            .SemiBold()
+            .FontColor(_palette.Muted);
     }
 
     private void ComposeFooter(IContainer container, CatalogPage catalogPage)
