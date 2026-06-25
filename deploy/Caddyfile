@@ -1,4 +1,8 @@
 pdf-api.hirdavat.ai {
+	handle_path /catalog/* {
+		reverse_proxy questpdf-catalog-api:5159
+	}
+
 	reverse_proxy questpdf-api:5159
 }
 

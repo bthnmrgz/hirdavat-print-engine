@@ -85,6 +85,14 @@ Catalog price lists use a separate endpoint and document type:
 - If a page includes `generated_image.data_uri`, the image is rendered as a full page.
 - Product pages are capped by `summary.items_per_page` (default `16`) so a 17th product must be sent as a continuation page.
 
+Production can run catalog rendering in an isolated container without rebuilding the shared operational PDF runtime. The bundled compose/Caddy config routes `https://pdf-api.hirdavat.ai/catalog/*` to `questpdf-catalog-api` and strips the `/catalog` prefix, so Analytics Worker should use:
+
+```text
+CATALOG_QUESTPDF_PRINT_API_URL=https://pdf-api.hirdavat.ai/catalog/render/catalog-price-list-url
+```
+
+Set `CATALOG_QUESTPDF_API_KEY` in the print-engine `.env` and use the same value as the Analytics Worker secret `CATALOG_QUESTPDF_PRINT_API_TOKEN`.
+
 Common fields:
 
 ```json

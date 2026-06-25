@@ -144,6 +144,22 @@ Rebuild/deploy:
 docker compose up -d --build questpdf-api caddy
 ```
 
+Catalog-only isolated runtime:
+
+```bash
+grep '^CATALOG_QUESTPDF_API_KEY=' .env
+docker compose up -d --build questpdf-catalog-api caddy
+curl -i https://pdf-api.hirdavat.ai/catalog/health
+```
+
+`/catalog/*` is stripped by Caddy before proxying to `questpdf-catalog-api`, so the Analytics Worker catalog endpoint should be:
+
+```text
+CATALOG_QUESTPDF_PRINT_API_URL=https://pdf-api.hirdavat.ai/catalog/render/catalog-price-list-url
+```
+
+Keep the existing `questpdf-api` container untouched for quote, receipt, order slip, cari ledger, and labeler smoke checks.
+
 ## Mobil Static Host
 
 Mobil React release klasorleri:

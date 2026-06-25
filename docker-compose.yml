@@ -14,6 +14,21 @@ services:
     expose:
       - "5159"
 
+  questpdf-catalog-api:
+    build:
+      context: .
+      dockerfile: questpdf-service/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      QUESTPDF_API_KEY: ${CATALOG_QUESTPDF_API_KEY:?set CATALOG_QUESTPDF_API_KEY in .env}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://kodsuzai.bubbleapps.io,https://hirdavat.ai}
+      PDF_RETENTION_HOURS: ${PDF_RETENTION_HOURS:-24}
+    volumes:
+      - questpdf-catalog-generated-pdfs:/app/generated-pdfs
+    expose:
+      - "5159"
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
@@ -26,6 +41,7 @@ services:
     restart: unless-stopped
     depends_on:
       - questpdf-api
+      - questpdf-catalog-api
     ports:
       - "80:80"
       - "443:443"
@@ -37,5 +53,6 @@ services:
 
 volumes:
   questpdf-generated-pdfs:
+  questpdf-catalog-generated-pdfs:
   caddy-data:
   caddy-config:
