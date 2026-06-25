@@ -213,7 +213,7 @@ app.MapPost("/render/catalog-price-list-url", async Task<IResult> (IHttpClientFa
     CleanupGeneratedPdfs(generatedPdfDirectory, pdfRetention, app.Logger);
     await File.WriteAllBytesAsync(filePath, pdf);
 
-    var publicUrl = PublicUrl(httpContext, "/files/" + Uri.EscapeDataString(fileName));
+    var publicUrl = PublicUrl(httpContext, CatalogFilePublicPath(httpContext, fileName));
 
     return Results.Ok(new
     {
@@ -892,6 +892,26 @@ static string PublicUrl(HttpContext httpContext, string path)
     var host = FirstHeader(request, "X-Forwarded-Host", request.Host.Value);
 
     return proto + "://" + host + path;
+}
+
+static string CatalogFilePublicPath(HttpContext httpContext, string fileName)
+{
+    var encodedFileName = Uri.EscapeDataString(fileName);
+    var prefix = FirstHeader(httpContext.Request, "X-Forwarded-Prefix", "").TrimEnd('/');
+
+    if (string.IsNullOrWhiteSpace(prefix) && IsPublicPdfApiHost(httpContext))
+        prefix = "/catalog";
+
+    return string.IsNullOrWhiteSpace(prefix)
+        ? "/files/" + encodedFileName
+        : prefix + "/files/" + encodedFileName;
+}
+
+static bool IsPublicPdfApiHost(HttpContext httpContext)
+{
+    var host = FirstHeader(httpContext.Request, "X-Forwarded-Host", httpContext.Request.Host.Value);
+    var hostName = host.Split(':', 2)[0];
+    return hostName.Equals("pdf-api.hirdavat.ai", StringComparison.OrdinalIgnoreCase);
 }
 
 static string FirstHeader(HttpRequest request, string name, string fallback)
