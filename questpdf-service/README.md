@@ -6,8 +6,10 @@ The route names stay backwards-compatible:
 
 - `POST /render/order-slip` returns a PDF binary.
 - `POST /render/order-slip-url` writes the PDF and returns `{ pdf_url }`.
+- `POST /render/catalog-price-list-url` writes a catalog PDF and returns `{ pdf_url, url }`.
 
-The request body selects the layout with `document_type`: `quote`, `receipt`, `order_slip`, `cari_ledger`, or `labeler`.
+The shared order-slip route selects the layout with `document_type`: `quote`, `receipt`, `order_slip`, `cari_ledger`, or `labeler`.
+Catalog price lists intentionally use the separate `/render/catalog-price-list-url` route with `document_type: "catalog_price_list"`.
 
 ## Run locally
 
@@ -49,6 +51,11 @@ curl -X POST http://localhost:5159/render/order-slip-url \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: local-dev-key" \
   --data-binary @examples/labeler-valid.json
+
+curl -X POST http://localhost:5159/render/catalog-price-list-url \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/catalog-price-list-valid.json
 ```
 
 ## Payload rules
@@ -58,6 +65,7 @@ curl -X POST http://localhost:5159/render/order-slip-url \
 - `customer` is optional; when empty, the customer header block is hidden.
 - `quote` and `order_slip` require `items` or `table`.
 - `receipt` requires `payments` or `table`.
+- `catalog_price_list` is accepted only by `/render/catalog-price-list-url`; it requires `pages[]` with at least one product page and one product.
 - Callers send formatted totals and visible amount strings. The service validates and renders them, but does not calculate tax, discount, withholding, or grand totals.
 - Normal documents repeat their header on every page. When the output has more than one page, `Sayfa X/Y` is rendered at the bottom center.
 - `labeler` keeps its fixed label grid and does not render document headers or page numbers.
@@ -72,6 +80,15 @@ Receipt-specific fields:
 
 - `payments`: payment rows.
 - `payment_totals`: right-side payment type totals and final amount.
+
+Catalog-specific fields:
+
+- `style.page_size`: `a4_portrait` by default; `a4_landscape` is also accepted.
+- `summary.items_per_page`: product limit per product page; defaults to `16`.
+- `pages[].type`: `cover`, `section`, or `products`.
+- `pages[].products`: product cards for `section` and `products` pages.
+- `pages[].generated_image.data_uri`: optional `image/png`, `image/jpeg`, or `image/webp` data URI. When present, the page is rendered as a full A4 image.
+- Empty product pages are rejected; send 17+ products as continuation pages instead of one oversized page.
 
 ## Custom tables
 
