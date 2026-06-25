@@ -5,14 +5,16 @@
   "company": {
     "id": "company-demo",
     "name": "Ozgunbora Teknik Hird. ve Buro Kirt. San. Tic. Ltd. Sti.",
-    "contact_info": "Oto Sanayi Sitesi No: 12 Basaksehir / Istanbul"
+    "contact_info": "Oto Sanayi Sitesi No: 12 Basaksehir / Istanbul",
+    "colors": ["#123456", "#F4B000"]
   },
   "title": "Bayi Fiyat Katalogu",
   "style": {
     "page_size": "a4_portrait",
     "theme": "technical",
     "tone": "Teknik, guvenilir ve bayi musterisine uygun.",
-    "price_emphasis": "balanced"
+    "price_emphasis": "balanced",
+    "missing_image_behavior": "text_only"
   },
   "summary": {
     "page_count": 2,
