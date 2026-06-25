@@ -146,6 +146,84 @@ app.MapPost("/render/order-slip-url", async Task<IResult> (IHttpClientFactory ht
     });
 });
 
+app.MapPost("/render/catalog-price-list-url", async Task<IResult> (IHttpClientFactory httpClientFactory, HttpContext httpContext) =>
+{
+    var authError = RequireApiKey(httpContext, apiKey);
+    if (authError is not null)
+        return authError;
+
+    var payloadResult = await ReadPayloadAsync(httpContext);
+    if (payloadResult.Error is not null)
+        return payloadResult.Error;
+
+    var payload = payloadResult.Payload!;
+    if (!Text(payload.DocumentType).Equals("catalog_price_list", StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new
+        {
+            ok = false,
+            success = false,
+            error = "document_type 'catalog_price_list' olmalidir."
+        });
+    }
+
+    var error = ValidateCatalogPriceList(payload);
+
+    if (!string.IsNullOrWhiteSpace(error))
+    {
+        return Results.BadRequest(new
+        {
+            ok = false,
+            success = false,
+            error
+        });
+    }
+
+    byte[] pdf;
+
+    try
+    {
+        var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
+        pdf = GenerateCatalogPriceListPdf(payload, logoBytes);
+    }
+    catch (Exception exception)
+    {
+        app.Logger.LogError(exception, "Failed to render catalog PDF for {DocumentNo}", payload.DocumentNo);
+        return Results.Json(new
+        {
+            ok = false,
+            success = false,
+            error = new
+            {
+                code = "render_failed",
+                message = "Katalog PDF render edilemedi.",
+                detail = exception.Message
+            }
+        }, statusCode: StatusCodes.Status500InternalServerError);
+    }
+
+    var fileName = UniquePdfFileName(payload.DocumentNo, "catalog-price-list");
+    var filePath = Path.Combine(generatedPdfDirectory, fileName);
+
+    CleanupGeneratedPdfs(generatedPdfDirectory, pdfRetention, app.Logger);
+    await File.WriteAllBytesAsync(filePath, pdf);
+
+    var publicUrl = PublicUrl(httpContext, "/files/" + Uri.EscapeDataString(fileName));
+
+    return Results.Ok(new
+    {
+        ok = true,
+        success = true,
+        pdf_url = publicUrl,
+        url = publicUrl,
+        documentNo = payload.DocumentNo,
+        document_no = payload.DocumentNo,
+        file_name = fileName,
+        content_type = "application/pdf",
+        size_bytes = pdf.Length
+    });
+});
+
 app.Run();
 
 static IResult? RequireApiKey(HttpContext httpContext, string? configuredApiKey)
@@ -443,6 +521,114 @@ static string ValidateLabeler(PrintDocumentPayload payload)
     return "";
 }
 
+static string ValidateCatalogPriceList(PrintDocumentPayload payload)
+{
+    if (payload.CatalogPages is not { Count: > 0 })
+        return "pages alani en az bir katalog sayfasi icermelidir.";
+
+    if (payload.CatalogPages.Count > 120)
+        return "pages alani en fazla 120 sayfa icerebilir.";
+
+    var productCount = 0;
+    var contentPageCount = 0;
+    var maxProductsPerPage = Math.Clamp(payload.CatalogSummary?.ItemsPerPage ?? 16, 1, 32);
+
+    for (var index = 0; index < payload.CatalogPages.Count; index++)
+    {
+        var page = payload.CatalogPages[index];
+        var pageNo = index + 1;
+        var type = Text(page.Type).ToLowerInvariant();
+
+        if (type is not ("cover" or "section" or "products"))
+            return $"pages[{pageNo}].type cover, section veya products olmalidir.";
+
+        var hasGeneratedImage = !string.IsNullOrWhiteSpace(page.GeneratedImage?.DataUri);
+        var pageProducts = page.Products?
+            .Where(product => HasCatalogProductContent(product))
+            .ToList() ?? [];
+
+        if (type is "section" or "products")
+        {
+            if (pageProducts.Count == 0 && !hasGeneratedImage)
+                return $"pages[{pageNo}].products en az bir urun icermelidir.";
+
+            if (pageProducts.Count > maxProductsPerPage)
+                return $"pages[{pageNo}].products en fazla {maxProductsPerPage} urun icermelidir.";
+
+            contentPageCount++;
+        }
+
+        var imageError = ValidateCatalogGeneratedImage(page.GeneratedImage, pageNo);
+        if (!string.IsNullOrWhiteSpace(imageError))
+            return imageError;
+
+        productCount += pageProducts.Count;
+
+        if (productCount > 5000)
+            return "pages icindeki toplam urun sayisi en fazla 5000 olabilir.";
+    }
+
+    if (contentPageCount == 0 || productCount == 0)
+        return "katalog en az bir urun sayfasi ve urun icermelidir.";
+
+    return "";
+}
+
+static bool HasCatalogProductContent(CatalogProduct? product)
+{
+    if (product is null)
+        return false;
+
+    return !string.IsNullOrWhiteSpace(FirstNonEmpty(
+        product.Name,
+        product.Sku,
+        product.CatalogCode,
+        product.PriceDisplay));
+}
+
+static string ValidateCatalogGeneratedImage(CatalogGeneratedImage? image, int pageNo)
+{
+    var dataUri = Text(image?.DataUri);
+
+    if (dataUri.Length == 0)
+        return "";
+
+    var mimeType = CatalogImageMimeFromDataUri(dataUri);
+    if (!IsAllowedCatalogImageMime(mimeType))
+        return $"pages[{pageNo}].generated_image desteklenen data URI image/png, image/jpeg veya image/webp olmalidir.";
+
+    var base64 = CatalogImageBase64FromDataUri(dataUri);
+    if (base64.Length == 0)
+        return $"pages[{pageNo}].generated_image base64 icerik icermelidir.";
+
+    int byteLength;
+    try
+    {
+        byteLength = EstimateCatalogBase64ByteLength(base64);
+    }
+    catch (FormatException)
+    {
+        return $"pages[{pageNo}].generated_image gecerli base64 olmali.";
+    }
+
+    if (image?.ByteLength is > 0)
+        byteLength = image.ByteLength.Value;
+
+    if (byteLength > 8 * 1024 * 1024)
+        return $"pages[{pageNo}].generated_image en fazla 8 MB olabilir.";
+
+    try
+    {
+        _ = Convert.FromBase64String(base64);
+    }
+    catch (FormatException)
+    {
+        return $"pages[{pageNo}].generated_image gecerli base64 olmali.";
+    }
+
+    return "";
+}
+
 static async Task<byte[]?> TryFetchLogoAsync(string? logoUrl, IHttpClientFactory httpClientFactory)
 {
     if (!Uri.TryCreate(Text(logoUrl), UriKind.Absolute, out var uri))
@@ -484,6 +670,11 @@ static byte[] GeneratePrintPdf(PrintDocumentPayload payload, byte[]? logoBytes)
     return CountPdfPages(pdf) > 1
         ? new PrintDocumentPdfDocument(payload, logoBytes, showPageNumbers: true).GeneratePdf()
         : pdf;
+}
+
+static byte[] GenerateCatalogPriceListPdf(PrintDocumentPayload payload, byte[]? logoBytes)
+{
+    return new CatalogPriceListPdfDocument(payload, logoBytes).GeneratePdf();
 }
 
 static int CountPdfPages(byte[] pdf)
@@ -1671,6 +1862,338 @@ sealed class PrintDocumentPdfDocument : IDocument
     }
 }
 
+sealed class CatalogPriceListPdfDocument : IDocument
+{
+    private const string Navy = "#102A43";
+    private const string Muted = "#52616F";
+    private const string Border = "#D8DEE8";
+    private const string LightBackground = "#F7F9FC";
+    private const string PriceColor = "#0B5CAD";
+
+    private readonly PrintDocumentPayload _payload;
+    private readonly byte[]? _logoBytes;
+    private readonly NormalizedCatalogStyle _style;
+
+    public CatalogPriceListPdfDocument(PrintDocumentPayload payload, byte[]? logoBytes)
+    {
+        _payload = payload;
+        _logoBytes = logoBytes;
+        _style = NormalizedCatalogStyle.From(payload.CatalogStyle, payload.CatalogSummary);
+    }
+
+    public DocumentMetadata GetMetadata() => DocumentMetadata.Default;
+
+    public void Compose(IDocumentContainer container)
+    {
+        foreach (var catalogPage in _payload.CatalogPages ?? [])
+        {
+            var generatedImageBytes = DecodeCatalogDataUri(catalogPage.GeneratedImage?.DataUri);
+
+            if (generatedImageBytes is not null)
+            {
+                ComposeGeneratedImagePage(container, generatedImageBytes);
+                continue;
+            }
+
+            container.Page(page =>
+            {
+                page.Size(_style.PaperSize);
+                page.Margin(Mm(_style.PageMarginMm));
+                page.DefaultTextStyle(text => text.FontSize(7).FontColor(Colors.Grey.Darken4));
+
+                if (IsCover(catalogPage))
+                {
+                    page.Content().Element(element => ComposeCover(element, catalogPage));
+                    page.Footer().Element(element => ComposeFooter(element, catalogPage));
+                    return;
+                }
+
+                page.Header().Element(element => ComposeHeader(element, catalogPage));
+                page.Content().Element(element => ComposeProducts(element, catalogPage));
+                page.Footer().Element(element => ComposeFooter(element, catalogPage));
+            });
+        }
+    }
+
+    private void ComposeGeneratedImagePage(IDocumentContainer container, byte[] imageBytes)
+    {
+        container.Page(page =>
+        {
+            page.Size(_style.PaperSize);
+            page.Margin(0);
+            page.Content().Image(imageBytes).FitArea();
+        });
+    }
+
+    private void ComposeCover(IContainer container, CatalogPage catalogPage)
+    {
+        container
+            .AlignMiddle()
+            .Column(column =>
+            {
+                column.Spacing(Mm(8));
+
+                if (_logoBytes is not null)
+                {
+                    column.Item()
+                        .Width(Mm(48))
+                        .Height(Mm(18))
+                        .Image(_logoBytes)
+                        .FitArea();
+                }
+
+                column.Item()
+                    .Text(FirstNonEmpty(catalogPage.Title, _payload.Title, "Katalog Fiyat Listesi"))
+                    .FontSize(24)
+                    .Bold()
+                    .FontColor(Navy);
+
+                var companyName = Text(_payload.Company?.Name);
+                if (companyName.Length > 0)
+                {
+                    column.Item()
+                        .Text(companyName)
+                        .FontSize(11)
+                        .FontColor(Muted);
+                }
+
+                var contactInfo = Text(_payload.Company?.ContactInfo);
+                if (contactInfo.Length > 0)
+                {
+                    column.Item()
+                        .Text(contactInfo)
+                        .FontSize(8)
+                        .FontColor(Muted);
+                }
+
+                column.Item()
+                    .PaddingTop(Mm(8))
+                    .Element(ComposeCoverSummary);
+            });
+    }
+
+    private void ComposeCoverSummary(IContainer container)
+    {
+        container
+            .Border(Mm(0.3))
+            .BorderColor(Border)
+            .Background(LightBackground)
+            .Padding(Mm(5))
+            .Row(row =>
+            {
+                row.RelativeItem().Element(element => ComposeMetric(element, "Sayfa", _payload.CatalogSummary?.PageCount));
+                row.RelativeItem().Element(element => ComposeMetric(element, "Ürün", _payload.CatalogSummary?.ProductCount));
+                row.RelativeItem().Element(element => ComposeMetric(element, "Kategori", _payload.CatalogSummary?.CategoryCount));
+                row.RelativeItem().Element(element => ComposeMetric(element, "Eksik fiyat", _payload.CatalogHealth?.MissingPriceCount));
+            });
+    }
+
+    private static void ComposeMetric(IContainer container, string label, int? value)
+    {
+        container.Column(column =>
+        {
+            column.Spacing(Mm(1));
+            column.Item().Text(label).FontSize(6).FontColor(Muted);
+            column.Item().Text(Math.Max(0, value ?? 0).ToString(CultureInfo.InvariantCulture)).FontSize(12).Bold().FontColor(Navy);
+        });
+    }
+
+    private void ComposeHeader(IContainer container, CatalogPage catalogPage)
+    {
+        container
+            .PaddingBottom(Mm(5))
+            .BorderBottom(Mm(0.35))
+            .BorderColor(Border)
+            .Row(row =>
+            {
+                row.RelativeItem().Column(column =>
+                {
+                    column.Spacing(Mm(1.2));
+                    column.Item()
+                        .Text(FirstNonEmpty(catalogPage.Title, catalogPage.Category, _payload.Title, "Katalog Fiyat Listesi"))
+                        .FontSize(13)
+                        .Bold()
+                        .FontColor(Navy);
+
+                    var subtitle = FirstNonEmpty(catalogPage.Category, _payload.Company?.Name);
+                    if (subtitle.Length > 0)
+                        column.Item().Text(subtitle).FontSize(7).FontColor(Muted);
+                });
+
+                row.ConstantItem(Mm(38)).AlignRight().Column(column =>
+                {
+                    column.Spacing(Mm(1));
+                    column.Item().Text("Sayfa").FontSize(6).FontColor(Muted);
+                    column.Item().Text(PageNumberText(catalogPage)).FontSize(10).Bold().FontColor(Navy);
+                });
+            });
+    }
+
+    private void ComposeProducts(IContainer container, CatalogPage catalogPage)
+    {
+        var products = CatalogProducts(catalogPage);
+
+        container.PaddingTop(Mm(5)).Table(table =>
+        {
+            table.ColumnsDefinition(columns =>
+            {
+                for (var index = 0; index < _style.Columns; index++)
+                    columns.RelativeColumn();
+            });
+
+            foreach (var product in products)
+            {
+                table.Cell()
+                    .Padding(Mm(1))
+                    .Element(element => ComposeProductCard(element, product));
+            }
+        });
+    }
+
+    private void ComposeProductCard(IContainer container, CatalogProduct product)
+    {
+        container
+            .MinHeight(Mm(_style.ProductCardMinHeightMm))
+            .Border(Mm(0.3))
+            .BorderColor(Border)
+            .Background(Colors.White)
+            .Padding(Mm(2.2))
+            .Column(column =>
+            {
+                column.Spacing(Mm(0.9));
+
+                var code = FirstNonEmpty(product.CatalogCode, product.Sku, product.Id);
+                if (code.Length > 0)
+                    column.Item().Text(Truncate(code, 46)).FontSize(5.7f).FontColor(Muted);
+
+                column.Item()
+                    .Text(Truncate(FirstNonEmpty(product.Name, "Ürün"), 82))
+                    .FontSize(7.1f)
+                    .Bold()
+                    .FontColor(Navy);
+
+                var description = FirstNonEmpty(product.Description, product.Brand);
+                if (description.Length > 0)
+                    column.Item().Text(Truncate(description, 88)).FontSize(5.8f).FontColor(Muted);
+
+                column.Item().Row(row =>
+                {
+                    row.RelativeItem().Column(meta =>
+                    {
+                        meta.Spacing(Mm(0.6));
+                        var brand = Text(product.Brand);
+                        if (brand.Length > 0)
+                            meta.Item().Text(Truncate(brand, 34)).FontSize(5.6f).FontColor(Muted);
+
+                        var vat = FirstNonEmpty(product.VatLabel, product.Stock);
+                        if (vat.Length > 0)
+                            meta.Item().Text(Truncate(vat, 36)).FontSize(5.4f).FontColor(Muted);
+                    });
+
+                    row.ConstantItem(Mm(35))
+                        .AlignRight()
+                        .Text(FirstNonEmpty(product.PriceDisplay, "-"))
+                        .FontSize(8.1f)
+                        .Bold()
+                        .FontColor(PriceColor);
+                });
+            });
+    }
+
+    private void ComposeFooter(IContainer container, CatalogPage catalogPage)
+    {
+        container
+            .PaddingTop(Mm(3.5))
+            .BorderTop(Mm(0.25))
+            .BorderColor(Border)
+            .Row(row =>
+            {
+                row.RelativeItem()
+                    .Text(FirstNonEmpty(_payload.Company?.Name, _payload.Title, "Katalog"))
+                    .FontSize(6)
+                    .FontColor(Muted);
+
+                row.ConstantItem(Mm(46))
+                    .AlignRight()
+                    .Text(GeneratedAtText())
+                    .FontSize(6)
+                    .FontColor(Muted);
+            });
+    }
+
+    private static bool IsCover(CatalogPage page)
+    {
+        return Text(page.Type).Equals("cover", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static List<CatalogProduct> CatalogProducts(CatalogPage page)
+    {
+        return page.Products?
+            .Where(HasProductContent)
+            .ToList() ?? [];
+    }
+
+    private static bool HasProductContent(CatalogProduct product)
+    {
+        return FirstNonEmpty(product.Name, product.Sku, product.CatalogCode, product.PriceDisplay).Length > 0;
+    }
+
+    private string PageNumberText(CatalogPage page)
+    {
+        var total = _payload.CatalogSummary?.PageCount;
+
+        if (total is > 0)
+            return $"{Math.Max(1, page.PageNumberValue ?? 1)}/{total.Value}";
+
+        return Math.Max(1, page.PageNumberValue ?? 1).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private string GeneratedAtText()
+    {
+        var text = Text(_payload.GeneratedAt);
+
+        if (DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date))
+            return date.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture);
+
+        return text.Length > 0 ? text : DateTimeOffset.Now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture);
+    }
+
+    private static string Truncate(string? value, int maxLength)
+    {
+        var text = Text(value);
+
+        if (text.Length <= maxLength)
+            return text;
+
+        return text[..Math.Max(0, maxLength - 1)] + "…";
+    }
+}
+
+sealed class NormalizedCatalogStyle
+{
+    public PageSize PaperSize { get; init; } = PageSizes.A4;
+    public double PageMarginMm { get; init; } = 10;
+    public int Columns { get; init; } = 2;
+    public double ProductCardMinHeightMm { get; init; } = 25.8;
+
+    public static NormalizedCatalogStyle From(CatalogPrintStyle? style, CatalogSummary? summary)
+    {
+        var pageSize = Text(style?.PageSize).ToLowerInvariant().Replace("-", "_", StringComparison.Ordinal);
+        var isLandscape = pageSize.Contains("landscape", StringComparison.Ordinal);
+        var itemsPerPage = summary?.ItemsPerPage is > 0 ? summary.ItemsPerPage.Value : 16;
+
+        return new NormalizedCatalogStyle
+        {
+            PaperSize = isLandscape ? PageSizes.A4.Landscape() : PageSizes.A4,
+            PageMarginMm = isLandscape ? 8 : 10,
+            Columns = isLandscape ? 4 : 2,
+            ProductCardMinHeightMm = isLandscape
+                ? 29
+                : itemsPerPage <= 12 ? 31 : 25.8
+        };
+    }
+}
+
 static class PdfHelpers
 {
     public static string SafeFileName(string? value, string fallback)
@@ -1687,6 +2210,87 @@ static class PdfHelpers
     }
 
     public static string Text(string? value) => value?.Trim() ?? "";
+
+    public static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            var text = Text(value);
+
+            if (text.Length > 0)
+                return text;
+        }
+
+        return "";
+    }
+
+    public static string CatalogImageMimeFromDataUri(string? value)
+    {
+        var text = Text(value);
+
+        if (!text.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            return "";
+
+        var commaIndex = text.IndexOf(',');
+        var semicolonIndex = text.IndexOf(';');
+        var endIndex = semicolonIndex >= 0 && (commaIndex < 0 || semicolonIndex < commaIndex)
+            ? semicolonIndex
+            : commaIndex;
+
+        return endIndex > 5 ? text[5..endIndex].Trim().ToLowerInvariant() : "";
+    }
+
+    public static string CatalogImageBase64FromDataUri(string? value)
+    {
+        var text = Text(value);
+        var commaIndex = text.IndexOf(',');
+
+        if (commaIndex < 0 || commaIndex >= text.Length - 1)
+            return "";
+
+        return text[(commaIndex + 1)..].Replace(" ", "", StringComparison.Ordinal)
+            .Replace("\r", "", StringComparison.Ordinal)
+            .Replace("\n", "", StringComparison.Ordinal)
+            .Replace("\t", "", StringComparison.Ordinal);
+    }
+
+    public static bool IsAllowedCatalogImageMime(string? value)
+    {
+        return Text(value).ToLowerInvariant() is "image/png" or "image/jpeg" or "image/jpg" or "image/webp";
+    }
+
+    public static int EstimateCatalogBase64ByteLength(string base64)
+    {
+        var text = Text(base64);
+
+        if (text.Length == 0 || text.Length % 4 != 0)
+            throw new FormatException("Invalid base64 length.");
+
+        var padding = text.EndsWith("==", StringComparison.Ordinal) ? 2 : text.EndsWith("=", StringComparison.Ordinal) ? 1 : 0;
+        return Math.Max(0, (text.Length * 3 / 4) - padding);
+    }
+
+    public static byte[]? DecodeCatalogDataUri(string? value)
+    {
+        var text = Text(value);
+
+        if (!IsAllowedCatalogImageMime(CatalogImageMimeFromDataUri(text)))
+            return null;
+
+        var base64 = CatalogImageBase64FromDataUri(text);
+
+        if (base64.Length == 0)
+            return null;
+
+        try
+        {
+            return Convert.FromBase64String(base64);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
 
     public static string NormalizeSvgCode(string? value)
     {
@@ -1873,6 +2477,18 @@ sealed class PrintDocumentPayload
 
     [JsonPropertyName("rows")]
     public List<DocumentTableRow>? Rows { get; init; }
+
+    [JsonPropertyName("style")]
+    public CatalogPrintStyle? CatalogStyle { get; init; }
+
+    [JsonPropertyName("summary")]
+    public CatalogSummary? CatalogSummary { get; init; }
+
+    [JsonPropertyName("health")]
+    public CatalogHealth? CatalogHealth { get; init; }
+
+    [JsonPropertyName("pages")]
+    public List<CatalogPage>? CatalogPages { get; init; }
 }
 
 sealed class CariLedgerParty
@@ -1903,6 +2519,135 @@ sealed class LabelerItem
 
     [JsonPropertyName("etiket_adedi")]
     public int LabelCount { get; init; }
+}
+
+sealed class CatalogPrintStyle
+{
+    [JsonPropertyName("page_size")]
+    public string? PageSize { get; init; }
+
+    [JsonPropertyName("theme")]
+    public string? Theme { get; init; }
+
+    [JsonPropertyName("tone")]
+    public string? Tone { get; init; }
+
+    [JsonPropertyName("price_emphasis")]
+    public string? PriceEmphasis { get; init; }
+}
+
+sealed class CatalogSummary
+{
+    [JsonPropertyName("page_count")]
+    public int? PageCount { get; init; }
+
+    [JsonPropertyName("product_count")]
+    public int? ProductCount { get; init; }
+
+    [JsonPropertyName("category_count")]
+    public int? CategoryCount { get; init; }
+
+    [JsonPropertyName("items_per_page")]
+    public int? ItemsPerPage { get; init; }
+}
+
+sealed class CatalogHealth
+{
+    [JsonPropertyName("total_product_count")]
+    public int? TotalProductCount { get; init; }
+
+    [JsonPropertyName("eligible_product_count")]
+    public int? EligibleProductCount { get; init; }
+
+    [JsonPropertyName("missing_price_count")]
+    public int? MissingPriceCount { get; init; }
+
+    [JsonPropertyName("missing_image_count")]
+    public int? MissingImageCount { get; init; }
+}
+
+sealed class CatalogPage
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; init; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; init; }
+
+    [JsonPropertyName("pageNumber")]
+    public int? PageNumber { get; init; }
+
+    [JsonPropertyName("page_number")]
+    public int? PageNumberSnake { get; init; }
+
+    [JsonPropertyName("title")]
+    public string? Title { get; init; }
+
+    [JsonPropertyName("subtitle")]
+    public string? Subtitle { get; init; }
+
+    [JsonPropertyName("category")]
+    public string? Category { get; init; }
+
+    [JsonPropertyName("products")]
+    public List<CatalogProduct>? Products { get; init; }
+
+    [JsonPropertyName("generated_image")]
+    public CatalogGeneratedImage? GeneratedImage { get; init; }
+
+    [JsonIgnore]
+    public int? PageNumberValue => PageNumber ?? PageNumberSnake;
+}
+
+sealed class CatalogProduct
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; init; }
+
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    [JsonPropertyName("sku")]
+    public string? Sku { get; init; }
+
+    [JsonPropertyName("catalog_code")]
+    public string? CatalogCode { get; init; }
+
+    [JsonPropertyName("brand")]
+    public string? Brand { get; init; }
+
+    [JsonPropertyName("category")]
+    public string? Category { get; init; }
+
+    [JsonPropertyName("price_display")]
+    public string? PriceDisplay { get; init; }
+
+    [JsonPropertyName("currency")]
+    public string? Currency { get; init; }
+
+    [JsonPropertyName("vat_label")]
+    public string? VatLabel { get; init; }
+
+    [JsonPropertyName("stock")]
+    public string? Stock { get; init; }
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("image_url")]
+    public string? ImageUrl { get; init; }
+}
+
+sealed class CatalogGeneratedImage
+{
+    [JsonPropertyName("data_uri")]
+    public string? DataUri { get; init; }
+
+    [JsonPropertyName("mime_type")]
+    public string? MimeType { get; init; }
+
+    [JsonPropertyName("byte_length")]
+    public int? ByteLength { get; init; }
 }
 
 sealed class CariLedgerView
@@ -2069,6 +2814,9 @@ sealed class PrintStyle
 
 sealed class Party
 {
+    [JsonPropertyName("id")]
+    public string? Id { get; init; }
+
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
@@ -2098,6 +2846,9 @@ sealed class Party
 
     [JsonPropertyName("logo_url")]
     public string? LogoUrl { get; init; }
+
+    [JsonPropertyName("contact_info")]
+    public string? ContactInfo { get; init; }
 }
 
 sealed class OrderInfo

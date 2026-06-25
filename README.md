@@ -15,6 +15,7 @@ The old Bubble plugin/browser-print layer has been removed. This repository now 
 - `examples/receipt-valid.json` - receipt payload.
 - `examples/cari-ledger-valid.json` - cari ledger payload.
 - `examples/labeler-valid.json` - TopStick 8706 QR label payload.
+- `examples/catalog-price-list-valid.json` - catalog price list payload.
 - `docker-compose.yml` - local/production compose entrypoint.
 - `deploy/Caddyfile` - Caddy reverse proxy config.
 - `launch/` - local macOS launchd helpers.
@@ -51,6 +52,15 @@ curl -X POST http://localhost:5159/render/order-slip-url \
   --data-binary @examples/quote-valid.json
 ```
 
+Render a catalog price list and receive a public URL:
+
+```bash
+curl -X POST http://localhost:5159/render/catalog-price-list-url \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/catalog-price-list-valid.json
+```
+
 ## Data Contract
 
 Endpoint names stay backwards-compatible, but the request body selects the layout with `document_type`:
@@ -60,6 +70,15 @@ Endpoint names stay backwards-compatible, but the request body selects the layou
 - `order_slip` - sipariş fişi layout.
 - `cari_ledger` - cari ekstre layout.
 - `labeler` - TopStick 8706 / 70x37mm / A4 3x8 QR etiket layout.
+
+Catalog price lists use a separate endpoint and document type:
+
+- Endpoint: `POST /render/catalog-price-list-url`.
+- `document_type`: `catalog_price_list`.
+- Response includes both `pdf_url` and `url` for server-side relays.
+- `pages[]` may contain `cover`, `section`, or `products` pages.
+- If a page includes `generated_image.data_uri`, the image is rendered as a full A4 page.
+- Product pages are capped by `summary.items_per_page` (default `16`) so a 17th product must be sent as a continuation page.
 
 Common fields:
 
@@ -83,6 +102,7 @@ Validation rules:
 - `receipt` requires `payments` or `table`.
 - `cari_ledger` requires `cari.name` and root-level `columns`; `rows` may be empty.
 - `labeler` requires root-level `labels`; it does not require `company`, `items`, or `table`.
+- `catalog_price_list` is accepted only by `/render/catalog-price-list-url`; it requires root-level `pages` with at least one product page and one product.
 - `customer` is optional. If omitted, null, or empty, the customer header block is hidden.
 - For `quote`, `receipt`, `order_slip`, and `cari_ledger`, the document header repeats on every page. Multi-page PDFs show `Sayfa X/Y` centered at the bottom.
 - `labeler` keeps its fixed label grid and does not render document headers or page numbers.
@@ -156,6 +176,11 @@ curl -X POST http://localhost:5159/render/order-slip-url \
   -H "Content-Type: application/json" \
   -H "X-Api-Key: local-dev-key" \
   --data-binary @examples/labeler-valid.json
+
+curl -X POST http://localhost:5159/render/catalog-price-list-url \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: local-dev-key" \
+  --data-binary @examples/catalog-price-list-valid.json
 ```
 
 ## Build

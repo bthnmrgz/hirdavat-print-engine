@@ -1,0 +1,240 @@
+{
+  "document_type": "catalog_price_list",
+  "document_no": "CATALOG-2026-001",
+  "generated_at": "2026-06-25T09:00:00.000Z",
+  "company": {
+    "id": "company-demo",
+    "name": "Ozgunbora Teknik Hird. ve Buro Kirt. San. Tic. Ltd. Sti.",
+    "contact_info": "Oto Sanayi Sitesi No: 12 Basaksehir / Istanbul"
+  },
+  "title": "Bayi Fiyat Katalogu",
+  "style": {
+    "page_size": "a4_portrait",
+    "theme": "technical",
+    "tone": "Teknik, guvenilir ve bayi musterisine uygun.",
+    "price_emphasis": "balanced"
+  },
+  "summary": {
+    "page_count": 2,
+    "product_count": 16,
+    "category_count": 1,
+    "items_per_page": 16
+  },
+  "health": {
+    "total_product_count": 16,
+    "eligible_product_count": 16,
+    "missing_price_count": 0,
+    "missing_image_count": 0
+  },
+  "pages": [
+    {
+      "id": "cover",
+      "type": "cover",
+      "pageNumber": 1,
+      "title": "Bayi Fiyat Katalogu",
+      "category": "",
+      "products": []
+    },
+    {
+      "id": "aku-somun-sikma-1",
+      "type": "section",
+      "pageNumber": 2,
+      "title": "Akulu Darbeli Somun Sikma Makineleri",
+      "category": "Akulu Darbeli Somun Sikma Makineleri",
+      "products": [
+        {
+          "id": "p-001",
+          "name": "Akulu darbeli somun sikma makinesi 18V 1/2 inç",
+          "sku": "AKU-001",
+          "catalog_code": "KAT-001",
+          "brand": "Hirdavat Pro",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$149,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Kompakt govde, fircasiz motor, iki akulu set."
+        },
+        {
+          "id": "p-002",
+          "name": "Profesyonel akulu somun sikma 20V 700 Nm",
+          "sku": "AKU-002",
+          "catalog_code": "KAT-002",
+          "brand": "TorqueMax",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$219,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Agir hizmet tipi, metal sanzimanli."
+        },
+        {
+          "id": "p-003",
+          "name": "Mini akulu darbeli somun sikma 12V",
+          "sku": "AKU-003",
+          "catalog_code": "KAT-003",
+          "brand": "Compact",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$89,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Dar alanlarda servis ve montaj icin."
+        },
+        {
+          "id": "p-004",
+          "name": "Akulu somun sikma makinesi 1/2 1000 Nm",
+          "sku": "AKU-004",
+          "catalog_code": "KAT-004",
+          "brand": "PowerLine",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$329,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Yuksek torklu sokme uygulamalari icin."
+        },
+        {
+          "id": "p-005",
+          "name": "Akulu darbeli somun sikma seti 18V",
+          "sku": "AKU-005",
+          "catalog_code": "KAT-005",
+          "brand": "Hirdavat Pro",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$179,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Canta, sarj cihazi ve iki aku dahil."
+        },
+        {
+          "id": "p-006",
+          "name": "Kompakt somun sikma 20V 400 Nm",
+          "sku": "AKU-006",
+          "catalog_code": "KAT-006",
+          "brand": "TorqueMax",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$165,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Servis arabalari ve saha ekipleri icin."
+        },
+        {
+          "id": "p-007",
+          "name": "Fircasiz akulu somun sikma 18V",
+          "sku": "AKU-007",
+          "catalog_code": "KAT-007",
+          "brand": "Brushless",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$199,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Uzun calisma suresi ve dusuk isinma."
+        },
+        {
+          "id": "p-008",
+          "name": "Yuksek tork akulu somun sikma 3/4",
+          "sku": "AKU-008",
+          "catalog_code": "KAT-008",
+          "brand": "PowerLine",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$389,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Kamyon ve agir ekipman servisleri icin."
+        },
+        {
+          "id": "p-009",
+          "name": "Akulu somun sikma govde 18V",
+          "sku": "AKU-009",
+          "catalog_code": "KAT-009",
+          "brand": "Hirdavat Pro",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$119,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Aku ve sarj cihazi haric govde."
+        },
+        {
+          "id": "p-010",
+          "name": "Endustriyel akulu somun sikma 1500 Nm",
+          "sku": "AKU-010",
+          "catalog_code": "KAT-010",
+          "brand": "Industrial",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$529,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Zorlu sokme isleri ve filo bakimi icin."
+        },
+        {
+          "id": "p-011",
+          "name": "Hafif seri akulu somun sikma 18V",
+          "sku": "AKU-011",
+          "catalog_code": "KAT-011",
+          "brand": "Compact",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$139,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Gunluk montaj ve servis kullanimi."
+        },
+        {
+          "id": "p-012",
+          "name": "Akulu darbeli somun sikma 21V 2 aku",
+          "sku": "AKU-012",
+          "catalog_code": "KAT-012",
+          "brand": "TorqueMax",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$159,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Bayi kampanya seti."
+        },
+        {
+          "id": "p-013",
+          "name": "Darbeli somun sikma 18V solo",
+          "sku": "AKU-013",
+          "catalog_code": "KAT-013",
+          "brand": "Brushless",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$129,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Mevcut aku platformlariyla uyumlu."
+        },
+        {
+          "id": "p-014",
+          "name": "Akulu somun sikma seti 20V 600 Nm",
+          "sku": "AKU-014",
+          "catalog_code": "KAT-014",
+          "brand": "PowerLine",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$249,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Atolye ve saha kullanimina uygun."
+        },
+        {
+          "id": "p-015",
+          "name": "Kompakt darbeli somun sikma 18V 1/2",
+          "sku": "AKU-015",
+          "catalog_code": "KAT-015",
+          "brand": "Compact",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$109,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Lastik ve servis uygulamalari icin."
+        },
+        {
+          "id": "p-016",
+          "name": "Profesyonel akulu somun sikma seti 18V",
+          "sku": "AKU-016",
+          "catalog_code": "KAT-016",
+          "brand": "Industrial",
+          "category": "Akulu Darbeli Somun Sikma Makineleri",
+          "price_display": "$289,00",
+          "vat_label": "KDV dahil",
+          "stock": "Stokta",
+          "description": "Bayi stoklari icin populer set."
+        }
+      ]
+    }
+  ]
+}
