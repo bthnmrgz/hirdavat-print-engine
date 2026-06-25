@@ -37,6 +37,10 @@ builder.Services.AddHttpClient("logo", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
 });
+builder.Services.AddHttpClient("catalog-image", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(4);
+});
 
 var app = builder.Build();
 var generatedPdfDirectory = Path.Combine(app.Environment.ContentRootPath, "generated-pdfs");
@@ -184,7 +188,8 @@ app.MapPost("/render/catalog-price-list-url", async Task<IResult> (IHttpClientFa
     try
     {
         var logoBytes = await TryFetchLogoAsync(payload.Company?.LogoUrl, httpClientFactory);
-        pdf = GenerateCatalogPriceListPdf(payload, logoBytes);
+        var productImages = await TryFetchCatalogProductImagesAsync(payload, httpClientFactory, app.Logger);
+        pdf = GenerateCatalogPriceListPdf(payload, logoBytes, productImages);
     }
     catch (Exception exception)
     {
@@ -660,6 +665,90 @@ static async Task<byte[]?> TryFetchLogoAsync(string? logoUrl, IHttpClientFactory
     }
 }
 
+static async Task<IReadOnlyDictionary<string, byte[]>> TryFetchCatalogProductImagesAsync(
+    PrintDocumentPayload payload,
+    IHttpClientFactory httpClientFactory,
+    ILogger logger)
+{
+    var urls = (payload.CatalogPages ?? [])
+        .SelectMany(page => page.Products ?? [])
+        .Select(product => Text(product.ImageUrl))
+        .Where(IsFetchableRasterImageUrl)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Take(120)
+        .ToList();
+
+    if (urls.Count == 0)
+        return new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+
+    var client = httpClientFactory.CreateClient("catalog-image");
+    var images = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+    using var throttler = new SemaphoreSlim(8);
+
+    var tasks = urls.Select(async imageUrl =>
+    {
+        await throttler.WaitAsync();
+        try
+        {
+            var bytes = await TryFetchRasterImageAsync(imageUrl, client);
+            if (bytes is null)
+                return;
+
+            lock (images)
+                images[imageUrl] = bytes;
+        }
+        catch (Exception exception)
+        {
+            logger.LogDebug(exception, "Skipping catalog product image {ImageUrl}", imageUrl);
+        }
+        finally
+        {
+            throttler.Release();
+        }
+    });
+
+    await Task.WhenAll(tasks);
+    return images;
+}
+
+static bool IsFetchableRasterImageUrl(string? imageUrl)
+{
+    if (!Uri.TryCreate(Text(imageUrl), UriKind.Absolute, out var uri))
+        return false;
+
+    if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        return false;
+
+    return !LooksLikeSvgText(uri.AbsolutePath);
+}
+
+static async Task<byte[]?> TryFetchRasterImageAsync(string imageUrl, HttpClient client)
+{
+    if (!Uri.TryCreate(Text(imageUrl), UriKind.Absolute, out var uri))
+        return null;
+
+    using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+    if (!response.IsSuccessStatusCode)
+        return null;
+
+    var contentType = response.Content.Headers.ContentType?.MediaType;
+    if (LooksLikeSvgText(contentType))
+        return null;
+
+    if (!string.IsNullOrWhiteSpace(contentType) && !contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        return null;
+
+    const long maxImageBytes = 1_500_000;
+    if (response.Content.Headers.ContentLength is > maxImageBytes)
+        return null;
+
+    var bytes = await response.Content.ReadAsByteArrayAsync();
+    if (bytes.Length == 0 || bytes.Length > maxImageBytes)
+        return null;
+
+    return LooksLikeSvgBytes(bytes) ? null : bytes;
+}
+
 static byte[] GeneratePrintPdf(PrintDocumentPayload payload, byte[]? logoBytes)
 {
     if (Text(payload.DocumentType) == "labeler")
@@ -672,9 +761,12 @@ static byte[] GeneratePrintPdf(PrintDocumentPayload payload, byte[]? logoBytes)
         : pdf;
 }
 
-static byte[] GenerateCatalogPriceListPdf(PrintDocumentPayload payload, byte[]? logoBytes)
+static byte[] GenerateCatalogPriceListPdf(
+    PrintDocumentPayload payload,
+    byte[]? logoBytes,
+    IReadOnlyDictionary<string, byte[]> productImages)
 {
-    return new CatalogPriceListPdfDocument(payload, logoBytes).GeneratePdf();
+    return new CatalogPriceListPdfDocument(payload, logoBytes, productImages).GeneratePdf();
 }
 
 static int CountPdfPages(byte[] pdf)
@@ -1864,21 +1956,22 @@ sealed class PrintDocumentPdfDocument : IDocument
 
 sealed class CatalogPriceListPdfDocument : IDocument
 {
-    private const string Navy = "#102A43";
-    private const string Muted = "#52616F";
-    private const string Border = "#D8DEE8";
-    private const string LightBackground = "#F7F9FC";
-    private const string PriceColor = "#0B5CAD";
-
     private readonly PrintDocumentPayload _payload;
     private readonly byte[]? _logoBytes;
+    private readonly IReadOnlyDictionary<string, byte[]> _productImages;
     private readonly NormalizedCatalogStyle _style;
+    private readonly CatalogPalette _palette;
 
-    public CatalogPriceListPdfDocument(PrintDocumentPayload payload, byte[]? logoBytes)
+    public CatalogPriceListPdfDocument(
+        PrintDocumentPayload payload,
+        byte[]? logoBytes,
+        IReadOnlyDictionary<string, byte[]> productImages)
     {
         _payload = payload;
         _logoBytes = logoBytes;
+        _productImages = productImages;
         _style = NormalizedCatalogStyle.From(payload.CatalogStyle, payload.CatalogSummary);
+        _palette = CatalogPalette.From(payload.Company?.Colors, payload.CatalogStyle);
     }
 
     public DocumentMetadata GetMetadata() => DocumentMetadata.Default;
@@ -1897,7 +1990,7 @@ sealed class CatalogPriceListPdfDocument : IDocument
 
             container.Page(page =>
             {
-                page.Size(_style.PaperSize);
+                page.Size((float)_style.PageWidthMm, (float)_style.PageHeightMm, Unit.Millimetre);
                 page.Margin(Mm(_style.PageMarginMm));
                 page.DefaultTextStyle(text => text.FontSize(7).FontColor(Colors.Grey.Darken4));
 
@@ -1919,7 +2012,7 @@ sealed class CatalogPriceListPdfDocument : IDocument
     {
         container.Page(page =>
         {
-            page.Size(_style.PaperSize);
+            page.Size((float)_style.PageWidthMm, (float)_style.PageHeightMm, Unit.Millimetre);
             page.Margin(0);
             page.Content().Image(imageBytes).FitArea();
         });
@@ -1946,7 +2039,7 @@ sealed class CatalogPriceListPdfDocument : IDocument
                     .Text(FirstNonEmpty(catalogPage.Title, _payload.Title, "Katalog Fiyat Listesi"))
                     .FontSize(24)
                     .Bold()
-                    .FontColor(Navy);
+                    .FontColor(_palette.Primary);
 
                 var companyName = Text(_payload.Company?.Name);
                 if (companyName.Length > 0)
@@ -1954,7 +2047,7 @@ sealed class CatalogPriceListPdfDocument : IDocument
                     column.Item()
                         .Text(companyName)
                         .FontSize(11)
-                        .FontColor(Muted);
+                        .FontColor(_palette.Muted);
                 }
 
                 var contactInfo = Text(_payload.Company?.ContactInfo);
@@ -1963,7 +2056,7 @@ sealed class CatalogPriceListPdfDocument : IDocument
                     column.Item()
                         .Text(contactInfo)
                         .FontSize(8)
-                        .FontColor(Muted);
+                        .FontColor(_palette.Muted);
                 }
 
                 column.Item()
@@ -1976,8 +2069,8 @@ sealed class CatalogPriceListPdfDocument : IDocument
     {
         container
             .Border(Mm(0.3))
-            .BorderColor(Border)
-            .Background(LightBackground)
+            .BorderColor(_palette.Border)
+            .Background(_palette.LightBackground)
             .Padding(Mm(5))
             .Row(row =>
             {
@@ -1988,13 +2081,13 @@ sealed class CatalogPriceListPdfDocument : IDocument
             });
     }
 
-    private static void ComposeMetric(IContainer container, string label, int? value)
+    private void ComposeMetric(IContainer container, string label, int? value)
     {
         container.Column(column =>
         {
             column.Spacing(Mm(1));
-            column.Item().Text(label).FontSize(6).FontColor(Muted);
-            column.Item().Text(Math.Max(0, value ?? 0).ToString(CultureInfo.InvariantCulture)).FontSize(12).Bold().FontColor(Navy);
+            column.Item().Text(label).FontSize(6).FontColor(_palette.Muted);
+            column.Item().Text(Math.Max(0, value ?? 0).ToString(CultureInfo.InvariantCulture)).FontSize(12).Bold().FontColor(_palette.Primary);
         });
     }
 
@@ -2003,7 +2096,7 @@ sealed class CatalogPriceListPdfDocument : IDocument
         container
             .PaddingBottom(Mm(5))
             .BorderBottom(Mm(0.35))
-            .BorderColor(Border)
+            .BorderColor(_palette.Border)
             .Row(row =>
             {
                 row.RelativeItem().Column(column =>
@@ -2013,18 +2106,18 @@ sealed class CatalogPriceListPdfDocument : IDocument
                         .Text(FirstNonEmpty(catalogPage.Title, catalogPage.Category, _payload.Title, "Katalog Fiyat Listesi"))
                         .FontSize(13)
                         .Bold()
-                        .FontColor(Navy);
+                        .FontColor(_palette.Primary);
 
                     var subtitle = FirstNonEmpty(catalogPage.Category, _payload.Company?.Name);
                     if (subtitle.Length > 0)
-                        column.Item().Text(subtitle).FontSize(7).FontColor(Muted);
+                        column.Item().Text(subtitle).FontSize(7).FontColor(_palette.Muted);
                 });
 
                 row.ConstantItem(Mm(38)).AlignRight().Column(column =>
                 {
                     column.Spacing(Mm(1));
-                    column.Item().Text("Sayfa").FontSize(6).FontColor(Muted);
-                    column.Item().Text(PageNumberText(catalogPage)).FontSize(10).Bold().FontColor(Navy);
+                    column.Item().Text("Sayfa").FontSize(6).FontColor(_palette.Muted);
+                    column.Item().Text(PageNumberText(catalogPage)).FontSize(10).Bold().FontColor(_palette.Primary);
                 });
             });
     }
@@ -2052,51 +2145,88 @@ sealed class CatalogPriceListPdfDocument : IDocument
 
     private void ComposeProductCard(IContainer container, CatalogProduct product)
     {
+        var imageBytes = ProductImage(product);
+        var showImageSlot = _style.ShowProductImages
+            && (imageBytes is not null || _style.ShowMissingImagePlaceholder);
+
         container
             .MinHeight(Mm(_style.ProductCardMinHeightMm))
             .Border(Mm(0.3))
-            .BorderColor(Border)
+            .BorderColor(_palette.Border)
             .Background(Colors.White)
             .Padding(Mm(2.2))
-            .Column(column =>
+            .Row(row =>
             {
-                column.Spacing(Mm(0.9));
-
-                var code = FirstNonEmpty(product.CatalogCode, product.Sku, product.Id);
-                if (code.Length > 0)
-                    column.Item().Text(Truncate(code, 46)).FontSize(5.7f).FontColor(Muted);
-
-                column.Item()
-                    .Text(Truncate(FirstNonEmpty(product.Name, "Ürün"), 82))
-                    .FontSize(7.1f)
-                    .Bold()
-                    .FontColor(Navy);
-
-                var description = FirstNonEmpty(product.Description, product.Brand);
-                if (description.Length > 0)
-                    column.Item().Text(Truncate(description, 88)).FontSize(5.8f).FontColor(Muted);
-
-                column.Item().Row(row =>
+                if (showImageSlot)
                 {
-                    row.RelativeItem().Column(meta =>
+                    row.ConstantItem(Mm(_style.ProductImageSizeMm))
+                        .Height(Mm(_style.ProductImageSizeMm))
+                        .Element(element => ComposeProductImage(element, product, imageBytes));
+                }
+
+                row.RelativeItem()
+                    .PaddingLeft(showImageSlot ? Mm(2.2) : 0)
+                    .Column(column =>
                     {
-                        meta.Spacing(Mm(0.6));
-                        var brand = Text(product.Brand);
-                        if (brand.Length > 0)
-                            meta.Item().Text(Truncate(brand, 34)).FontSize(5.6f).FontColor(Muted);
+                        column.Spacing(Mm(0.9));
 
-                        var vat = FirstNonEmpty(product.VatLabel, product.Stock);
-                        if (vat.Length > 0)
-                            meta.Item().Text(Truncate(vat, 36)).FontSize(5.4f).FontColor(Muted);
+                        var code = FirstNonEmpty(product.CatalogCode, product.Sku, product.Id);
+                        if (code.Length > 0)
+                            column.Item().Text(Truncate(code, 44)).FontSize(5.7f).FontColor(_palette.Muted);
+
+                        column.Item()
+                            .Text(Truncate(FirstNonEmpty(product.Name, "Ürün"), _style.NameMaxLength))
+                            .FontSize(_style.NameFontSize)
+                            .Bold()
+                            .FontColor(_palette.Primary);
+
+                        var detail = FirstNonEmpty(product.Brand, product.Category, product.Description);
+                        if (detail.Length > 0)
+                            column.Item().Text(Truncate(detail, _style.DetailMaxLength)).FontSize(5.8f).FontColor(_palette.Muted);
+
+                        column.Item().Row(metaRow =>
+                        {
+                            metaRow.RelativeItem().Column(meta =>
+                            {
+                                meta.Spacing(Mm(0.6));
+                                var vat = FirstNonEmpty(product.VatLabel, product.Stock);
+                                if (vat.Length > 0)
+                                    meta.Item().Text(Truncate(vat, 36)).FontSize(5.4f).FontColor(_palette.Muted);
+                            });
+
+                            metaRow.ConstantItem(Mm(_style.PriceColumnWidthMm))
+                                .AlignRight()
+                                .AlignBottom()
+                                .Text(FirstNonEmpty(product.PriceDisplay, "-"))
+                                .FontSize(_style.PriceFontSize)
+                                .Bold()
+                                .FontColor(_palette.Price);
+                        });
                     });
+            });
+    }
 
-                    row.ConstantItem(Mm(35))
-                        .AlignRight()
-                        .Text(FirstNonEmpty(product.PriceDisplay, "-"))
-                        .FontSize(8.1f)
-                        .Bold()
-                        .FontColor(PriceColor);
-                });
+    private void ComposeProductImage(IContainer container, CatalogProduct product, byte[]? imageBytes)
+    {
+        container
+            .Border(Mm(0.25))
+            .BorderColor(_palette.Border)
+            .Background(_palette.ImageBackground)
+            .Padding(Mm(1))
+            .Element(element =>
+            {
+                if (imageBytes is not null)
+                {
+                    element.Image(imageBytes).FitArea();
+                    return;
+                }
+
+                element.AlignCenter()
+                    .AlignMiddle()
+                    .Text(ProductInitials(product))
+                    .FontSize(7)
+                    .SemiBold()
+                    .FontColor(_palette.Muted);
             });
     }
 
@@ -2105,19 +2235,19 @@ sealed class CatalogPriceListPdfDocument : IDocument
         container
             .PaddingTop(Mm(3.5))
             .BorderTop(Mm(0.25))
-            .BorderColor(Border)
+            .BorderColor(_palette.Border)
             .Row(row =>
             {
                 row.RelativeItem()
                     .Text(FirstNonEmpty(_payload.Company?.Name, _payload.Title, "Katalog"))
                     .FontSize(6)
-                    .FontColor(Muted);
+                    .FontColor(_palette.Muted);
 
                 row.ConstantItem(Mm(46))
                     .AlignRight()
                     .Text(GeneratedAtText())
                     .FontSize(6)
-                    .FontColor(Muted);
+                    .FontColor(_palette.Muted);
             });
     }
 
@@ -2158,6 +2288,26 @@ sealed class CatalogPriceListPdfDocument : IDocument
         return text.Length > 0 ? text : DateTimeOffset.Now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture);
     }
 
+    private byte[]? ProductImage(CatalogProduct product)
+    {
+        var imageUrl = Text(product.ImageUrl);
+        return imageUrl.Length > 0 && _productImages.TryGetValue(imageUrl, out var imageBytes)
+            ? imageBytes
+            : null;
+    }
+
+    private static string ProductInitials(CatalogProduct product)
+    {
+        var source = FirstNonEmpty(product.Brand, product.Name, product.CatalogCode, product.Sku, "Ürün");
+        var initials = string.Concat(source
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Take(2)
+            .Select(word => word[0]))
+            .ToUpperInvariant();
+
+        return initials.Length > 0 ? initials : "Ü";
+    }
+
     private static string Truncate(string? value, int maxLength)
     {
         var text = Text(value);
@@ -2171,26 +2321,118 @@ sealed class CatalogPriceListPdfDocument : IDocument
 
 sealed class NormalizedCatalogStyle
 {
-    public PageSize PaperSize { get; init; } = PageSizes.A4;
+    public double PageWidthMm { get; init; } = 210;
+    public double PageHeightMm { get; init; } = 297;
     public double PageMarginMm { get; init; } = 10;
     public int Columns { get; init; } = 2;
     public double ProductCardMinHeightMm { get; init; } = 25.8;
+    public bool ShowProductImages { get; init; } = true;
+    public bool ShowMissingImagePlaceholder { get; init; } = false;
+    public double ProductImageSizeMm { get; init; } = 18;
+    public double PriceColumnWidthMm { get; init; } = 35;
+    public float PriceFontSize { get; init; } = 8.1f;
+    public float NameFontSize { get; init; } = 7.1f;
+    public int NameMaxLength { get; init; } = 82;
+    public int DetailMaxLength { get; init; } = 88;
 
     public static NormalizedCatalogStyle From(CatalogPrintStyle? style, CatalogSummary? summary)
     {
         var pageSize = Text(style?.PageSize).ToLowerInvariant().Replace("-", "_", StringComparison.Ordinal);
         var isLandscape = pageSize.Contains("landscape", StringComparison.Ordinal);
+        var isSquare = pageSize.Contains("square", StringComparison.Ordinal);
+        var isStory = pageSize.Contains("story", StringComparison.Ordinal);
+        var priceEmphasis = Text(style?.PriceEmphasis).ToLowerInvariant();
+        var missingImageBehavior = Text(style?.MissingImageBehavior).ToLowerInvariant();
+        var isProminentPrice = priceEmphasis is "prominent" or "strong" or "bold" or "vurgulu";
+        var isSubtlePrice = priceEmphasis is "subtle" or "soft" or "sade";
         var itemsPerPage = summary?.ItemsPerPage is > 0 ? summary.ItemsPerPage.Value : 16;
+        var columns = isStory || isSquare ? 1 : isLandscape ? 4 : 2;
 
         return new NormalizedCatalogStyle
         {
-            PaperSize = isLandscape ? PageSizes.A4.Landscape() : PageSizes.A4,
-            PageMarginMm = isLandscape ? 8 : 10,
-            Columns = isLandscape ? 4 : 2,
-            ProductCardMinHeightMm = isLandscape
+            PageWidthMm = isSquare ? 160 : isStory ? 108 : isLandscape ? 297 : 210,
+            PageHeightMm = isSquare ? 160 : isStory ? 192 : isLandscape ? 210 : 297,
+            PageMarginMm = isStory ? 6 : isSquare ? 8 : isLandscape ? 8 : 10,
+            Columns = columns,
+            ProductCardMinHeightMm = isStory
+                ? 36
+                : isSquare
+                    ? 34
+                    : isLandscape
                 ? 29
-                : itemsPerPage <= 12 ? 31 : 25.8
+                : itemsPerPage <= 12 ? 31 : 25.8,
+            ShowProductImages = true,
+            ProductImageSizeMm = isLandscape ? 14 : isStory ? 20 : isSquare ? 22 : 18,
+            PriceColumnWidthMm = isLandscape ? 25 : isStory ? 30 : 35,
+            PriceFontSize = isProminentPrice ? 9.4f : isSubtlePrice ? 7.4f : 8.1f,
+            NameFontSize = isStory || isSquare ? 7.8f : 7.1f,
+            NameMaxLength = isLandscape ? 54 : isStory ? 62 : 82,
+            DetailMaxLength = isLandscape ? 48 : isStory ? 60 : 88,
+            ShowMissingImagePlaceholder = missingImageBehavior is not "text_only" and not "text-only" and not "text"
         };
+    }
+}
+
+sealed class CatalogPalette
+{
+    public string Primary { get; init; } = "#102A43";
+    public string Accent { get; init; } = "#0B5CAD";
+    public string Price { get; init; } = "#0B5CAD";
+    public string Muted { get; init; } = "#52616F";
+    public string Border { get; init; } = "#D8DEE8";
+    public string LightBackground { get; init; } = "#F7F9FC";
+    public string ImageBackground { get; init; } = "#F8FAFC";
+
+    public static CatalogPalette From(IReadOnlyList<string>? brandColors, CatalogPrintStyle? style)
+    {
+        var colors = (brandColors ?? [])
+            .Select(NormalizeHexColor)
+            .Where(color => color.Length > 0)
+            .Take(3)
+            .ToList();
+
+        var theme = Text(style?.Theme).ToLowerInvariant();
+        var priceEmphasis = Text(style?.PriceEmphasis).ToLowerInvariant();
+        var defaultPrimary = theme switch
+        {
+            "premium" => "#1F2937",
+            "campaign" or "kampanya" => "#8A1C1C",
+            "minimal" => "#111827",
+            _ => "#102A43"
+        };
+
+        var primary = colors.ElementAtOrDefault(0) ?? defaultPrimary;
+        var accent = colors.ElementAtOrDefault(1) ?? (theme is "campaign" or "kampanya" ? "#D97706" : "#0B5CAD");
+        var muted = colors.ElementAtOrDefault(2) ?? "#52616F";
+        var price = priceEmphasis is "prominent" or "strong" or "bold" or "vurgulu"
+            ? accent
+            : primary;
+
+        return new CatalogPalette
+        {
+            Primary = primary,
+            Accent = accent,
+            Price = price,
+            Muted = muted
+        };
+    }
+
+    private static string NormalizeHexColor(string? value)
+    {
+        var text = Text(value).Trim();
+        if (text.Length == 0)
+            return "";
+
+        if (!text.StartsWith('#'))
+            text = "#" + text;
+
+        var hex = text[1..];
+        if (hex.Length == 3 && hex.All(Uri.IsHexDigit))
+            return "#" + string.Concat(hex.Select(character => new string(character, 2))).ToUpperInvariant();
+
+        return hex.Length == 6 && hex.All(Uri.IsHexDigit)
+            ? "#" + hex.ToUpperInvariant()
+            : "";
     }
 }
 
@@ -2534,6 +2776,9 @@ sealed class CatalogPrintStyle
 
     [JsonPropertyName("price_emphasis")]
     public string? PriceEmphasis { get; init; }
+
+    [JsonPropertyName("missing_image_behavior")]
+    public string? MissingImageBehavior { get; init; }
 }
 
 sealed class CatalogSummary
@@ -2849,6 +3094,9 @@ sealed class Party
 
     [JsonPropertyName("contact_info")]
     public string? ContactInfo { get; init; }
+
+    [JsonPropertyName("colors")]
+    public List<string>? Colors { get; init; }
 }
 
 sealed class OrderInfo

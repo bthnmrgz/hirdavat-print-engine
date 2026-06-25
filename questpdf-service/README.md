@@ -83,11 +83,15 @@ Receipt-specific fields:
 
 Catalog-specific fields:
 
-- `style.page_size`: `a4_portrait` by default; `a4_landscape` is also accepted.
+- `company.colors`: optional brand palette; the first color is used as the primary PDF color and the second as the accent color.
+- `style.page_size`: `a4_portrait` by default; `a4_landscape`, `square`, and `story` are also accepted.
+- `style.price_emphasis`: `balanced`, `prominent`, or `subtle`; prominent prices use the accent color.
+- `style.missing_image_behavior`: `text_only` keeps missing-image products as text cards; any other value reserves a placeholder image box.
 - `summary.items_per_page`: product limit per product page; defaults to `16`.
 - `pages[].type`: `cover`, `section`, or `products`.
 - `pages[].products`: product cards for `section` and `products` pages.
-- `pages[].generated_image.data_uri`: optional `image/png`, `image/jpeg`, or `image/webp` data URI. When present, the page is rendered as a full A4 image.
+- `pages[].products[].image_url`: optional HTTP(S) raster image URL; SVG and oversized images are skipped.
+- `pages[].generated_image.data_uri`: optional `image/png`, `image/jpeg`, or `image/webp` data URI. When present, the page is rendered as a full-page image.
 - Empty product pages are rejected; send 17+ products as continuation pages instead of one oversized page.
 
 ## Custom tables

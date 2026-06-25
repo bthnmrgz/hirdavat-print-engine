@@ -76,8 +76,13 @@ Catalog price lists use a separate endpoint and document type:
 - Endpoint: `POST /render/catalog-price-list-url`.
 - `document_type`: `catalog_price_list`.
 - Response includes both `pdf_url` and `url` for server-side relays.
+- `company.colors` may carry brand colors; the first color becomes primary and the second color becomes accent.
+- `style.page_size` accepts `a4_portrait`, `a4_landscape`, `square`, and `story`.
+- `style.price_emphasis` accepts `balanced`, `prominent`, and `subtle`.
+- `style.missing_image_behavior=text_only` keeps missing-image products as text cards.
 - `pages[]` may contain `cover`, `section`, or `products` pages.
-- If a page includes `generated_image.data_uri`, the image is rendered as a full A4 page.
+- `pages[].products[].image_url` may carry an HTTP(S) raster product image URL. SVG and oversized images are skipped.
+- If a page includes `generated_image.data_uri`, the image is rendered as a full page.
 - Product pages are capped by `summary.items_per_page` (default `16`) so a 17th product must be sent as a continuation page.
 
 Common fields:
