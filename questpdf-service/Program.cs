@@ -36,6 +36,9 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpClient("logo", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
+}).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AllowAutoRedirect = false,
 });
 builder.Services.AddHttpClient("catalog-image", client =>
 {
@@ -639,7 +642,7 @@ static async Task<byte[]?> TryFetchLogoAsync(string? logoUrl, IHttpClientFactory
     if (!Uri.TryCreate(Text(logoUrl), UriKind.Absolute, out var uri))
         return null;
 
-    if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+    if (uri.Scheme != Uri.UriSchemeHttps || !IsAllowedLogoHost(uri.Host))
         return null;
 
     if (LooksLikeSvgText(uri.AbsolutePath))
@@ -648,21 +651,62 @@ static async Task<byte[]?> TryFetchLogoAsync(string? logoUrl, IHttpClientFactory
     try
     {
         var client = httpClientFactory.CreateClient("logo");
-        using var response = await client.GetAsync(uri);
-
-        response.EnsureSuccessStatusCode();
-
-        var contentType = response.Content.Headers.ContentType?.MediaType;
-        if (LooksLikeSvgText(contentType))
+        using var response = await client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+        if (!response.IsSuccessStatusCode)
             return null;
 
-        var bytes = await response.Content.ReadAsByteArrayAsync();
-        return LooksLikeSvgBytes(bytes) ? null : bytes;
+        var contentType = response.Content.Headers.ContentType?.MediaType;
+        if (LooksLikeSvgText(contentType)
+            || (!string.IsNullOrWhiteSpace(contentType)
+                && !contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        const int maxLogoBytes = 1_500_000;
+        if (response.Content.Headers.ContentLength is > maxLogoBytes)
+            return null;
+
+        var bytes = await ReadBoundedBytesAsync(response.Content, maxLogoBytes);
+        if (bytes is null || bytes.Length == 0)
+            return null;
+
+        return LooksLikeSvgBytes(bytes) || !LooksLikeSupportedRasterImage(bytes) ? null : bytes;
     }
     catch
     {
         return null;
     }
+}
+
+static async Task<byte[]?> ReadBoundedBytesAsync(HttpContent content, int maxBytes)
+{
+    await using var stream = await content.ReadAsStreamAsync();
+    using var output = new MemoryStream(capacity: Math.Min(maxBytes, 64 * 1024));
+    var buffer = new byte[16 * 1024];
+    var total = 0;
+
+    while (true)
+    {
+        var read = await stream.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, maxBytes + 1 - total)));
+        if (read == 0)
+            return output.ToArray();
+
+        total += read;
+        if (total > maxBytes)
+            return null;
+
+        await output.WriteAsync(buffer.AsMemory(0, read));
+    }
+}
+
+static bool IsAllowedLogoHost(string? host)
+{
+    return Text(host).ToLowerInvariant() switch
+    {
+        "tenant-api-proxy.kod-suz.workers.dev" => true,
+        "tenant-api-proxy-version-test.kod-suz.workers.dev" => true,
+        "b4644019dae049734171732de6f590e7.cdn.bubble.io" => true,
+        _ => false,
+    };
 }
 
 static async Task<IReadOnlyDictionary<string, byte[]>> TryFetchCatalogProductImagesAsync(
@@ -1105,8 +1149,11 @@ sealed class PrintDocumentPdfDocument : IDocument
             if (!string.IsNullOrWhiteSpace(_payload.Customer?.Name))
                 column.Item().Text(Text(_payload.Customer?.Name)).Bold();
 
+            AddLabelValue("Cari Kodu:", _payload.Customer?.Code);
             AddText(_payload.Customer?.Address);
             AddLabelValue("Tel:", _payload.Customer?.Phone);
+            AddLabelValue("Vergi D.:", _payload.Customer?.TaxOffice);
+            AddLabelValue("VKN/TCKN:", FirstText(_payload.Customer?.TaxNo, _payload.Customer?.Tckn));
             AddLabelValue("Mükellef Tipi:", _payload.Customer?.DocumentType);
             AddLabelValue("Nakliyat Yöntemi:", _payload.Order?.ShippingMethod);
         });
@@ -1908,6 +1955,7 @@ sealed class PrintDocumentPdfDocument : IDocument
 
         return !string.IsNullOrWhiteSpace(FirstText(
             party.Name,
+            party.Code,
             party.Address,
             party.Phone,
             party.Email,
@@ -3136,6 +3184,9 @@ sealed class Party
 
     [JsonPropertyName("name")]
     public string? Name { get; init; }
+
+    [JsonPropertyName("code")]
+    public string? Code { get; init; }
 
     [JsonPropertyName("address")]
     public string? Address { get; init; }

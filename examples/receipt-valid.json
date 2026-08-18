@@ -3,6 +3,15 @@
   "document_no": "MAKBUZ-2026-1",
   "date": "15/05/2026",
   "title": "Tahsilat Makbuzu",
+  "print_style": {
+    "paper_size": "a5",
+    "page_margin_mm": 8,
+    "logo_width_mm": 32,
+    "logo_height_mm": 12,
+    "body_font_px": 7.2,
+    "table_font_px": 7.1,
+    "header_gap_mm": 15
+  },
   "company": {
     "name": "Ozgunbora Teknik Hird. ve Buro Kirt. San. Tic. Ltd. Sti.",
     "address": "Oto Sanayi Sitesi No: 12 Basaksehir / Istanbul",
@@ -10,7 +19,12 @@
   },
   "customer": {
     "name": "KODSUZ WEB VE YUKSEK TEKNOLOJI SAN. TIC. LTD. STI.",
-    "address": "2 CADDE NO:3 KUCUKYALI"
+    "code": "120.01.514",
+    "address": "2 CADDE NO:3 KUCUKYALI",
+    "phone": "0232 000 00 00",
+    "tax_office": "Gaziemir",
+    "tax_no": "1234567890",
+    "document_type": "Tuzel"
   },
   "receipt_type": "collection",
   "payments": [
